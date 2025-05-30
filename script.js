@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const feedbackDiv = document.getElementById('feedback');
     const currentLevelDisplay = document.getElementById('currentLevelDisplay');
     const progressToNextLevelDisplay = document.getElementById('progressToNextLevelDisplay');
+    const levelSelect = document.getElementById('levelSelect'); // New: Level selection dropdown
 
     let audioContext;
     let currentMelody = [];
@@ -13,9 +14,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let gameInProgress = true; // Overall game state
 
     // --- Progression State ---
-    let currentLevel = 1;
+    let currentLevel; // Will be loaded from localStorage or default to 1
     let correctAnswersInARow = 0;
     const CORRECT_ANSWERS_TO_LEVEL_UP = 3;
+    const LOCAL_STORAGE_LEVEL_KEY = 'melodyPitchCurrentLevel';
 
 
     const noteFrequencies = { // Base frequencies
@@ -209,6 +211,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (currentLevel < MAX_LEVEL) {
                     currentLevel++;
                     correctAnswersInARow = 0;
+                    saveLevel(currentLevel); // Save new level
                     feedbackDiv.textContent = `Level Up! Now on Level ${currentLevel}: ${levelSettings[currentLevel].name}`;
                 } else {
                     handleGameCompletion();
@@ -232,6 +235,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         userMelody = [];
         updateProgressDisplay();
+        populateLevelSelection(); // Update level selection dropdown
     }
 
     function handleGameCompletion() {
@@ -245,6 +249,47 @@ document.addEventListener('DOMContentLoaded', () => {
         currentLevelDisplay.textContent = "Game Mastered!";
         progressToNextLevelDisplay.textContent = "Well Done!";
         updatePianoKeyStyles(); // Dim all keys or set a default state
+        populateLevelSelection(); // Update level selection dropdown
+    }
+
+    // --- Level Storage Functions ---
+    function saveLevel(level) {
+        try {
+            localStorage.setItem(LOCAL_STORAGE_LEVEL_KEY, level);
+            console.log(`Level ${level} saved to localStorage.`);
+        } catch (e) {
+            console.error("Failed to save level to localStorage:", e);
+        }
+    }
+
+    function populateLevelSelection() {
+        levelSelect.innerHTML = ''; // Clear existing options
+        const maxUnlockedLevel = loadLevel(); // Get the highest unlocked level
+        for (let i = 1; i <= maxUnlockedLevel; i++) {
+            const option = document.createElement('option');
+            option.value = i;
+            option.textContent = `Level ${i}: ${levelSettings[i].name}`;
+            levelSelect.appendChild(option);
+        }
+        levelSelect.value = currentLevel; // Set current level as selected
+    }
+
+    function loadLevel() {
+        try {
+            const savedLevel = localStorage.getItem(LOCAL_STORAGE_LEVEL_KEY);
+            if (savedLevel) {
+                let level = parseInt(savedLevel, 10);
+                // Ensure loaded level is within valid range
+                if (level >= 1 && level <= MAX_LEVEL) {
+                    return level;
+                } else if (level > MAX_LEVEL) {
+                    return MAX_LEVEL; // Cap at max level if somehow higher
+                }
+            }
+        } catch (e) {
+            console.error("Failed to load level from localStorage:", e);
+        }
+        return 1; // Default to level 1 if no saved level or error
     }
 
     function startNewRound(autoPlayMelody = false) {
@@ -262,6 +307,7 @@ document.addEventListener('DOMContentLoaded', () => {
         generateMelody();
         updatePianoKeyStyles();
         updateProgressDisplay();
+        populateLevelSelection(); // Update level selection dropdown
 
         feedbackDiv.textContent = `Level ${currentLevel}: ${levelSettings[currentLevel].name}. Listen...`;
         feedbackDiv.className = 'feedback';
@@ -300,6 +346,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (playMelodyBtn.textContent === "Restart Game") {
             currentLevel = 1;
             correctAnswersInARow = 0;
+            saveLevel(currentLevel); // Reset saved level on restart
             gameInProgress = true; // Explicitly set game in progress
             startNewRound(true); // autoPlay new first melody
         } else if (currentMelody.length > 0 && gameInProgress) {
@@ -319,6 +366,19 @@ document.addEventListener('DOMContentLoaded', () => {
         checkAnswer();
     });
 
+    levelSelect.addEventListener('change', (event) => {
+        const selectedLevel = parseInt(event.target.value, 10);
+        if (selectedLevel >= 1 && selectedLevel <= loadLevel()) { // Only allow selecting unlocked levels
+            currentLevel = selectedLevel;
+            correctAnswersInARow = 0; // Reset progress for the new level
+            startNewRound(true); // Start new round with selected level
+        } else {
+            // Optionally provide feedback if an invalid level was somehow selected
+            console.warn("Attempted to select an invalid or locked level.");
+            levelSelect.value = currentLevel; // Revert selection
+        }
+    });
+
     document.addEventListener('keydown', (event) => {
         if (event.repeat || !canPlayPiano || !gameInProgress) return;
         const noteName = keyMap[event.code];
@@ -335,6 +395,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Initialization ---
     createPiano();
+    currentLevel = loadLevel(); // Load level on init
+    populateLevelSelection(); // Populate dropdown on init
     // Don't start a round immediately, let user click "Play Melody" first.
     // Update UI for initial state.
     playMelodyBtn.disabled = false;
@@ -342,5 +404,5 @@ document.addEventListener('DOMContentLoaded', () => {
     canPlayPiano = false;
     updatePianoKeyStyles(); // Dim keys based on level 1 initially
     updateProgressDisplay();
-    feedbackDiv.textContent = 'Welcome! Click "Play Melody" to start Level 1.';
+    feedbackDiv.textContent = `Welcome! Click "Play Melody" to start Level ${currentLevel}.`;
 });
