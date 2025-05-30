@@ -5,59 +5,134 @@ document.addEventListener('DOMContentLoaded', () => {
     const feedbackDiv = document.getElementById('feedback');
     const currentLevelDisplay = document.getElementById('currentLevelDisplay');
     const progressToNextLevelDisplay = document.getElementById('progressToNextLevelDisplay');
-    const levelSelect = document.getElementById('levelSelect'); // New: Level selection dropdown
+    const levelSelect = document.getElementById('levelSelect');
 
     let audioContext;
     let currentMelody = [];
     let userMelody = [];
-    let canPlayPiano = false; // Controls if user can click piano keys
-    let gameInProgress = true; // Overall game state
+    let canPlayPiano = false;
+    let gameInProgress = true;
 
-    // --- Progression State ---
-    let currentLevel; // Will be loaded from localStorage or default to 1
+    let currentLevel;
     let correctAnswersInARow = 0;
     const CORRECT_ANSWERS_TO_LEVEL_UP = 3;
-    const LOCAL_STORAGE_LEVEL_KEY = 'melodyPitchCurrentLevel';
+    const LOCAL_STORAGE_LEVEL_KEY = 'melodyPitchInfiniteCurrentLevel'; // Use a new key for infinite version
 
-
-    const noteFrequencies = { // Base frequencies
+    const noteFrequencies = {
         'G3': 196.00, 'G#3': 207.65, 'A3': 220.00, 'A#3': 233.08, 'B3': 246.94,
         'C4': 261.63, 'C#4': 277.18, 'D4': 293.66, 'D#4': 311.13, 'E4': 329.63,
         'F4': 349.23, 'F#4': 369.99, 'G4': 392.00, 'G#4': 415.30, 'A4': 440.00,
         'A#4': 466.16, 'B4': 493.88,
         'C5': 523.25, 'C#5': 554.37, 'D5': 587.33, 'D#5': 622.25, 'E5': 659.25,
     };
-    const allChromaticC4B4 = ['C4','C#4','D4','D#4','E4','F4','F#4','G4','G#4','A4','A#4','B4'];
-    const pianoKeyRenderOrder = ['C4','C#4','D4','D#4','E4','F4','F#4','G4','G#4','A4','A#4','B4','C5']; // Keys to physically draw
+    
+    // Note definitions for getLevelSettings - suffixed with _gs to avoid potential conflicts
+    const allChromaticC4B4_gs = ['C4','C#4','D4','D#4','E4','F4','F#4','G4','G#4','A4','A#4','B4'];
+    const allChromaticC4C5_gs = [...allChromaticC4B4_gs, 'C5'];
+    const cMajorScaleC4B4_gs = ['C4','D4','E4','F4','G4','A4','B4'];
+    const cMajorScaleC4C5_gs = [...cMajorScaleC4B4_gs, 'C5'];
+    const cMajorPentatonicC4A4_gs = ['C4','D4','E4','G4','A4'];
+    const cMajorPentatonicC4C5_gs = [...cMajorPentatonicC4A4_gs, 'C5'];
 
-    const keyMap = { // Keyboard mapping for common C4-C5 octave
+    const pianoKeyRenderOrder = ['C4','C#4','D4','D#4','E4','F4','F#4','G4','G#4','A4','A#4','B4','C5'];
+
+    const keyMap = {
         'KeyA': 'C4', 'KeyW': 'C#4', 'KeyS': 'D4', 'KeyE': 'D#4', 'KeyD': 'E4',
         'KeyF': 'F4', 'KeyT': 'F#4', 'KeyG': 'G4', 'KeyY': 'G#4', 'KeyH': 'A4',
         'KeyU': 'A#4', 'KeyJ': 'B4', 'KeyK': 'C5'
     };
 
-    // --- Level Definitions for Singers ---
-    const levelSettings = {
-        1: { melodyLength: 1, notePool: ['C4', 'D4'], name: "Pitch: C vs D", interval: 900 },
-        2: { melodyLength: 1, notePool: ['C4', 'E4'], name: "Pitch: C vs E (M3)", interval: 900 },
-        3: { melodyLength: 1, notePool: ['C4', 'G4'], name: "Pitch: C vs G (P5)", interval: 900 },
-        4: { melodyLength: 2, notePool: ['C4', 'D4', 'E4'], name: "Intervals: C,D,E Steps", interval: 800 },
-        5: { melodyLength: 2, notePool: ['C4', 'E4', 'G4'], name: "Arpeggio Fragments: C,E,G", interval: 800 },
-        6: { melodyLength: 2, notePool: ['C4','D4','E4','F4','G4'], name: "2 Notes: C-G White Keys", interval: 750 },
-        7: { melodyLength: 3, notePool: ['C4','D4','E4'], name: "3 Notes: C,D,E Steps", interval: 700 },
-        8: { melodyLength: 3, notePool: ['C4','E4','G4'], name: "3 Notes: C Major Arpeggio", interval: 700 },
-        9: { melodyLength: 3, notePool: ['C4','D4','E4','F4','G4','A4','B4'], name: "3 Notes: C Major Scale", interval: 650 },
-        10: { melodyLength: 3, notePool: allChromaticC4B4.slice(0,7), name: "3 Notes: Chromatic C4-F#4", interval: 650 }, // C,C#,D,D#,E,F,F#
-        11: { melodyLength: 4, notePool: ['C4','D4','E4','F4','G4','A4','B4'], name: "4 Notes: C Major Scale", interval: 600 },
-        12: { melodyLength: 4, notePool: allChromaticC4B4, name: "4 Notes: Full Chromatic C4-B4", interval: 600 },
-        13: { melodyLength: 4, notePool: ['G3','A3','B3','C4','D4','E4','F4','G4'], name: "4 Notes: G Major (Lower)", interval: 650},
-        14: { melodyLength: 5, notePool: allChromaticC4B4, name: "5 Notes: Chromatic C4-B4", interval: 550},
-        15: { melodyLength: 5, notePool: noteFrequencies.keys, name: "5 Notes: Wider Chromatic G3-E5", interval: 550, notePool: Object.keys(noteFrequencies).filter(n => n !== 'G#3' && n !== 'A#3' && n!== 'C#4' && n!=='D#4' && n!=='F#4' && n!=='G#4' && n!=='A#4' && n!=='C#5' && n!=='D#5' )}, // Example of a wider pool, simplified
-    };
-    const MAX_LEVEL = Object.keys(levelSettings).length;
+    // --- NEW: getLevelSettings function ---
+    function getLevelSettings(level) {
+        let melodyLength;
+        let notePool;
+        let name;
+        let tempo = 950;
 
+        if (level === 1) {
+            melodyLength = 1; notePool = ['C4', 'G4']; name = "1 Note: C4 vs G4"; tempo = 900;
+        } else if (level === 2) {
+            melodyLength = 1; notePool = ['C4', 'E4']; name = "1 Note: C4 vs E4"; tempo = 900;
+        } else if (level === 3) {
+            melodyLength = 1; notePool = ['C4', 'D4']; name = "1 Note: C4 vs D4"; tempo = 900;
+        } else if (level === 4) {
+            melodyLength = 1; notePool = ['C4', 'F4']; name = "1 Note: C4 vs F4"; tempo = 900;
+        } else if (level === 5) {
+            melodyLength = 1; notePool = ['C4', 'C5']; name = "1 Note: C4 vs C5 (Octave)"; tempo = 900;
+        }
+        else if (level >= 6 && level <= 25) { // PHASE 1: Two-Note Melodies
+            melodyLength = 2;
+            tempo = 850 - Math.floor((level - 6) / 4) * 25;
+            const subPhase = level - 5;
+            if (subPhase <= 3) { notePool = ['C4', 'D4', 'E4']; name = `2 Notes: C-D-E Steps (${subPhase}/3)`; }
+            else if (subPhase <= 6) { notePool = ['C4', 'E4', 'G4']; name = `2 Notes: C-E-G Skips (${subPhase-3}/3)`; }
+            else if (subPhase <= 9) { notePool = cMajorPentatonicC4A4_gs; name = `2 Notes: C Pentatonic Frags (${subPhase-6}/3)`; }
+            else if (subPhase <= 12) { notePool = cMajorScaleC4B4_gs.slice(0, 5); name = `2 Notes: C-G Diatonic Frags (${subPhase-9}/3)`; }
+            else if (subPhase <= 15) { notePool = cMajorScaleC4B4_gs; name = `2 Notes: C Maj Scale Frags (${subPhase-12}/3)`; }
+            else if (subPhase <= 17) { notePool = ['C4', 'C#4', 'D4']; name = `2 Notes: Chromatic C-C#-D (${subPhase-15}/2)`; }
+            else { // Levels 23-25
+                if (subPhase <= 18) { notePool = allChromaticC4B4_gs.slice(0,3); // C, C#, D
+                } else if (subPhase <= 19) { notePool = allChromaticC4B4_gs.slice(0,4); // C, C#, D, D#
+                } else { notePool = allChromaticC4B4_gs.slice(0,5); } // C, C#, D, D#, E
+                name = `2 Notes: Chromatic Frags (${subPhase-17}/3)`;
+            }
+        }
+        else if (level >= 26 && level <= 55) { // PHASE 2: Three-Note Melodies
+            melodyLength = 3;
+            tempo = 750 - Math.floor((level - 26) / 5) * 20;
+            const subPhase = level - 25;
+            if (subPhase <= 4) { notePool = ['C4', 'D4', 'E4']; name = `3 Notes: C-D-E Steps (${subPhase}/4)`; }
+            else if (subPhase <= 8) { notePool = cMajorPentatonicC4C5_gs; name = `3 Notes: C Pentatonic (${subPhase-4}/4)`; }
+            else if (subPhase <= 12) { notePool = ['C4', 'E4', 'G4', 'C5']; name = `3 Notes: C Maj Arp (${subPhase-8}/4)`; }
+            else if (subPhase <= 17) { notePool = cMajorScaleC4B4_gs.slice(0, 5); name = `3 Notes: C-G Diatonic (${subPhase-12}/5)`;}
+            else if (subPhase <= 22) { notePool = cMajorScaleC4C5_gs; name = `3 Notes: C Maj Scale (${subPhase-17}/5)`; }
+            else if (subPhase <= 26) { notePool = ['C4','D4','E4','F4','F#4','G4']; name = `3 Notes: Diatonic + F# (${subPhase-22}/4)`; }
+            else { // Levels 52-55
+                if (subPhase <= 28) { notePool = allChromaticC4B4_gs.slice(0,5); // C,C#,D,D#,E
+                } else { notePool = allChromaticC4B4_gs.slice(0,7); } // C to F#
+                name = `3 Notes: Chromatic Frags (${subPhase-26}/4)`;
+            }
+        }
+         else if (level >= 56 && level <= 90) { // PHASE 3: Four-Note Melodies
+            melodyLength = 4;
+            tempo = 650 - Math.floor((level - 56) / 6) * 15;
+            const subPhase = level - 55;
+            if (subPhase <= 5) { notePool = cMajorPentatonicC4C5_gs; name = `4 Notes: C Pentatonic (${subPhase}/5)`; }
+            else if (subPhase <= 10) { notePool = cMajorScaleC4B4_gs.slice(0,5); name = `4 Notes: C-G Diatonic (${subPhase-5}/5)`; }
+            else if (subPhase <= 17) { notePool = cMajorScaleC4C5_gs; name = `4 Notes: C Maj Scale (${subPhase-10}/7)`; }
+            else if (subPhase <= 24) { notePool = ['C4','C#4','D4','E4','F4','F#4','G4','A4','B4','C5'].filter(n => noteFrequencies[n]); name = `4 Notes: C Maj + Chromatics (${subPhase-17}/7)`; }
+            else if (subPhase <= 30) { notePool = allChromaticC4B4_gs.slice(0,7); name = `4 Notes: Chromatic C-F# (${subPhase-24}/6)`; }
+            else { notePool = allChromaticC4B4_gs; name = `4 Notes: Chromatic C-B (${subPhase-30}/5)`; }
+        }
+        else { // PHASE 4+: Longer Melodies
+            const baseLevelForPhase4 = 90;
+            const levelsIntoPhase4 = level - baseLevelForPhase4;
+            melodyLength = 5 + Math.floor(levelsIntoPhase4 / 40);
+            melodyLength = Math.min(melodyLength, 8); // Cap melody length
+            tempo = 550 - Math.floor(levelsIntoPhase4 / 8) * 10 - (melodyLength - 4) * 30;
+            const stageInLength = levelsIntoPhase4 % 40;
+            if (stageInLength < 8) { notePool = cMajorPentatonicC4C5_gs; name = `${melodyLength} Notes: C Pentatonic`; }
+            else if (stageInLength < 16) { notePool = cMajorScaleC4C5_gs; name = `${melodyLength} Notes: C Major Scale`; }
+            else if (stageInLength < 24) { notePool = allChromaticC4B4_gs.slice(0,7); name = `${melodyLength} Notes: Chromatic C-F#`; }
+            else if (stageInLength < 32) { notePool = allChromaticC4B4_gs; name = `${melodyLength} Notes: Chromatic C-B`; }
+            else { notePool = allChromaticC4C5_gs; name = `${melodyLength} Notes: Chromatic C-C (Octave)`; }
+            if (melodyLength >=6 && level > 150) {
+                const widerPoolBase = ['G3','A3','B3', ...allChromaticC4C5_gs, 'D5', 'E5'];
+                notePool = widerPoolBase.filter(n => noteFrequencies[n]); // Ensure all notes have frequencies
+                name = `${melodyLength} Notes: Wider Chromatic`;
+            }
+        }
+        tempo = Math.max(350, tempo); // Absolute minimum tempo
+        return {
+            levelNumber: level,
+            melodyLength,
+            notePool: (notePool && notePool.length > 0) ? notePool : ['C4'], // Fallback
+            name: `Lvl ${level}: ${name}`,
+            interval: tempo
+        };
+    }
 
-    // --- Audio Functions ---
+    // --- Audio Functions --- (Mostly Unchanged)
     function getAudioContext() {
         if (!audioContext) {
             try {
@@ -92,7 +167,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function playSequence(notes) {
         if (!gameInProgress) return;
         disableControlsDuringPlayback();
-        const settings = levelSettings[currentLevel];
+        const settings = getLevelSettings(currentLevel); // UPDATED
         const interval = settings.interval || 700;
 
         for (let i = 0; i < notes.length; i++) {
@@ -100,10 +175,10 @@ document.addEventListener('DOMContentLoaded', () => {
             await new Promise(resolve => setTimeout(resolve, interval));
         }
         
-        if (gameInProgress) { // Check again in case game ended during sequence
+        if (gameInProgress) {
             canPlayPiano = true;
-            checkAnswerBtn.disabled = true; // Disabled until user plays enough notes
-            playMelodyBtn.disabled = false; // Can replay current melody
+            checkAnswerBtn.disabled = true;
+            playMelodyBtn.disabled = false;
             feedbackDiv.textContent = `Your turn! Play the ${currentMelody.length}-note melody.`;
             feedbackDiv.className = 'feedback';
         }
@@ -122,7 +197,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updatePianoKeyStyles() {
-        const currentNotePool = levelSettings[currentLevel]?.notePool || allChromaticC4B4;
+        const currentSettings = getLevelSettings(currentLevel); // UPDATED
+        const currentNotePool = currentSettings?.notePool || pianoKeyRenderOrder; // Use pianoKeyRenderOrder as a fallback
         document.querySelectorAll('.piano .key').forEach(keyEl => {
             const note = keyEl.dataset.note;
             if (currentNotePool.includes(note)) {
@@ -136,13 +212,17 @@ document.addEventListener('DOMContentLoaded', () => {
     function handlePianoKeyPress(noteName, keyElement = null) {
         if (!canPlayPiano || !gameInProgress) return;
         
-        const currentNotePool = levelSettings[currentLevel]?.notePool || allChromaticC4B4;
-        if (!currentNotePool.includes(noteName) && !keyElement?.classList.contains('dimmed-for-level')) {
-            // If key is dimmed, don't register or play (already handled by CSS opacity and cursor)
-            // This secondary check is mostly for keyboard input where element might not be directly checked
-            // However, the main check for dimmed keys should be before calling this
-        }
+        const currentSettings = getLevelSettings(currentLevel); // UPDATED
+        const currentNotePool = currentSettings?.notePool || pianoKeyRenderOrder;
 
+        // Only play/register if the note is part of the current level's pool or if all keys are active (e.g. pianoKeyRenderOrder fallback)
+        // The dimmed-for-level class should visually guide the user, this is an additional check.
+        if (!currentNotePool.includes(noteName)) {
+            const actualElement = keyElement || document.querySelector(`.key[data-note="${noteName}"]`);
+            if(actualElement && actualElement.classList.contains('dimmed-for-level')) {
+                return; // Do not process if key is visually dimmed for the level
+            }
+        }
 
         playNote(noteName, 0.4);
         userMelody.push(noteName);
@@ -161,44 +241,45 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Game Logic ---
     function generateMelody() {
-        const settings = levelSettings[currentLevel];
+        const settings = getLevelSettings(currentLevel); // UPDATED
         currentMelody = [];
         const notePool = settings.notePool;
         const length = settings.melodyLength;
 
         if (!notePool || notePool.length === 0) {
-            console.error("Note pool empty for level:", currentLevel);
-            currentMelody = ['C4']; return;
+            console.error("Note pool empty for level:", currentLevel, "Settings:", settings);
+            currentMelody = ['C4']; return; // Fallback
         }
-
-        // Simple generation, try to make notes different if pool is small and length is 2
-        if (length === 2 && notePool.length === 2) {
+        
+        if (length === 1 && notePool.length > 0){ // Ensure this comes before the more general 'else'
+            currentMelody.push(notePool[Math.floor(Math.random() * notePool.length)]);
+        } else if (length === 2 && notePool.length === 2) {
             currentMelody.push(notePool[0]);
             currentMelody.push(notePool[1]);
-            if (Math.random() < 0.5) currentMelody.reverse(); // Shuffle C-D or D-C
-        } else if (length === 1 && notePool.length > 0){
-            currentMelody.push(notePool[Math.floor(Math.random() * notePool.length)]);
-        }
-        else {
+            if (Math.random() < 0.5) currentMelody.reverse();
+        } else {
+            let lastNote = null; // To avoid immediate repetition for short melodies
             for (let i = 0; i < length; i++) {
                 let nextNote;
+                let attempts = 0; // Prevent infinite loop if pool is too small
                 do {
                      nextNote = notePool[Math.floor(Math.random() * notePool.length)];
-                // Avoid immediate repetition in short melodies if pool allows
-                } while (length <= 3 && notePool.length > 1 && nextNote === currentMelody[i-1]);
+                     attempts++;
+                } while (length <= 3 && notePool.length > 1 && nextNote === lastNote && attempts < 10);
                 currentMelody.push(nextNote);
+                lastNote = nextNote;
             }
         }
-        console.log(`Lvl ${currentLevel} (${settings.name}): ${currentMelody.join(', ')}`);
+        console.log(`${settings.name}: ${currentMelody.join(', ')}`);
     }
 
     function checkAnswer() {
         if (!gameInProgress) return;
-        canPlayPiano = false; // Stop piano input during feedback/transition
-        disableControlsDuringPlayback(); // General disable
+        canPlayPiano = false;
+        disableControlsDuringPlayback();
 
         const targetLength = currentMelody.length;
-        const userPlayedSegment = userMelody.slice(-targetLength);
+        const userPlayedSegment = userMelody.slice(-targetLength); // Check only the last N notes
         let correct = userPlayedSegment.length === targetLength &&
                       currentMelody.every((note, index) => note === userPlayedSegment[index]);
 
@@ -208,124 +289,138 @@ document.addEventListener('DOMContentLoaded', () => {
             feedbackDiv.className = 'feedback correct';
 
             if (correctAnswersInARow >= CORRECT_ANSWERS_TO_LEVEL_UP) {
-                if (currentLevel < MAX_LEVEL) {
-                    currentLevel++;
-                    correctAnswersInARow = 0;
-                    saveLevel(currentLevel); // Save new level
-                    feedbackDiv.textContent = `Level Up! Now on Level ${currentLevel}: ${levelSettings[currentLevel].name}`;
-                } else {
-                    handleGameCompletion();
-                    return; // Exit, game over
+                currentLevel++;
+                correctAnswersInARow = 0;
+                saveLevel(currentLevel);
+                const newLevelSettings = getLevelSettings(currentLevel); // UPDATED
+                feedbackDiv.textContent = `Level Up! Now on ${newLevelSettings.name}`;
+                if (currentLevel % 25 === 0) { // Optional milestone message
+                    feedbackDiv.textContent += " Great progress!";
                 }
             } else {
                 feedbackDiv.textContent = `Correct! (${correctAnswersInARow}/${CORRECT_ANSWERS_TO_LEVEL_UP} for next level)`;
             }
-            // Auto proceed to next melody/level
             setTimeout(() => {
-                if(gameInProgress) startNewRound(true); // Pass true to autoPlay
-            }, 2000); // 2-second delay
+                if(gameInProgress) startNewRound(true);
+            }, 1500); // Shorter delay for correct
         } else {
             correctAnswersInARow = 0;
             feedbackDiv.textContent = `Not quite. Melody was: ${currentMelody.join(', ')}. You played: ${userPlayedSegment.join(', ')}. Try this level again.`;
             feedbackDiv.className = 'feedback incorrect';
-            // Auto proceed to new melody for *same* level
              setTimeout(() => {
-                if(gameInProgress) startNewRound(true); // Pass true to autoPlay
-            }, 3000); // 3-second delay for incorrect
+                if(gameInProgress) startNewRound(true);
+            }, 2500);
         }
-        userMelody = [];
+        userMelody = []; // Clear user melody after checking
         updateProgressDisplay();
-        populateLevelSelection(); // Update level selection dropdown
+        populateLevelSelection();
     }
 
-    function handleGameCompletion() {
+    function handleGameCompletion() { // This is now more like a "high score" or "restart" point
         gameInProgress = false;
         canPlayPiano = false;
-        feedbackDiv.textContent = "Congratulations! You've mastered all levels!";
+        const finalLevelSettings = getLevelSettings(currentLevel);
+        feedbackDiv.textContent = `Wow! You've reached ${finalLevelSettings.name}! Click Restart to play again.`;
         feedbackDiv.className = 'feedback correct';
         playMelodyBtn.textContent = "Restart Game";
         playMelodyBtn.disabled = false;
         checkAnswerBtn.disabled = true;
-        currentLevelDisplay.textContent = "Game Mastered!";
-        progressToNextLevelDisplay.textContent = "Well Done!";
-        updatePianoKeyStyles(); // Dim all keys or set a default state
-        populateLevelSelection(); // Update level selection dropdown
+        currentLevelDisplay.textContent = `Reached: ${currentLevel}`;
+        progressToNextLevelDisplay.textContent = "Fantastic!";
+        updatePianoKeyStyles();
+        populateLevelSelection();
     }
 
     // --- Level Storage Functions ---
     function saveLevel(level) {
         try {
             localStorage.setItem(LOCAL_STORAGE_LEVEL_KEY, level);
-            console.log(`Level ${level} saved to localStorage.`);
         } catch (e) {
             console.error("Failed to save level to localStorage:", e);
         }
     }
-
-    function populateLevelSelection() {
-        levelSelect.innerHTML = ''; // Clear existing options
-        const maxUnlockedLevel = loadLevel(); // Get the highest unlocked level
-        for (let i = 1; i <= maxUnlockedLevel; i++) {
-            const option = document.createElement('option');
-            option.value = i;
-            option.textContent = `Level ${i}: ${levelSettings[i].name}`;
-            levelSelect.appendChild(option);
-        }
-        levelSelect.value = currentLevel; // Set current level as selected
-    }
-
+    
     function loadLevel() {
         try {
             const savedLevel = localStorage.getItem(LOCAL_STORAGE_LEVEL_KEY);
             if (savedLevel) {
                 let level = parseInt(savedLevel, 10);
-                // Ensure loaded level is within valid range
-                if (level >= 1 && level <= MAX_LEVEL) {
-                    return level;
-                } else if (level > MAX_LEVEL) {
-                    return MAX_LEVEL; // Cap at max level if somehow higher
+                if (level >= 1) { // No hard upper cap, but getLevelSettings might have practical limits
+                    return Math.min(level, 999); // Practical cap for safety/UI
                 }
             }
         } catch (e) {
             console.error("Failed to load level from localStorage:", e);
         }
-        return 1; // Default to level 1 if no saved level or error
+        return 1;
     }
 
-    function startNewRound(autoPlayMelody = false) {
-        if (!gameInProgress && playMelodyBtn.textContent !== "Restart Game") { // Prevent starting if game over unless restarting
-             handleGameCompletion(); // Ensure UI is in completed state
-             return;
+    function populateLevelSelection() {
+        levelSelect.innerHTML = '';
+        const maxUnlockedLevel = loadLevel();
+        const practicalDropdownLimit = Math.max(maxUnlockedLevel, 200); // Show at least 200 or current unlocked
+
+        for (let i = 1; i <= practicalDropdownLimit; i++) {
+            if (i > maxUnlockedLevel && i > currentLevel + 5 && i !== practicalDropdownLimit) { // Don't list too many future levels
+                if (i % 10 === 0 || i % 25 === 0 ) { /* show some milestones */ }
+                else { continue; }
+            }
+            const option = document.createElement('option');
+            option.value = i;
+            const levelData = getLevelSettings(i);
+            option.textContent = levelData.name.length > 50 ? `Lvl ${i}: ${levelData.melodyLength} notes...` : levelData.name; // Truncate long names
+            
+            if (i > maxUnlockedLevel) {
+                option.disabled = true; // Visually indicate locked levels
+                option.textContent += " (Locked)";
+            }
+            levelSelect.appendChild(option);
         }
-        if (currentLevel > MAX_LEVEL) {
-            handleGameCompletion();
-            return;
+        
+        // Ensure currentLevel is selectable if it exists or is maxUnlockedLevel
+        if (document.querySelector(`option[value="${currentLevel}"]`)) {
+             levelSelect.value = currentLevel;
+        } else if (maxUnlockedLevel > 0 && document.querySelector(`option[value="${maxUnlockedLevel}"]`)) {
+             levelSelect.value = maxUnlockedLevel; // Fallback to highest unlocked if current isn't directly listed
+        } else if (levelSelect.options.length > 0) {
+             levelSelect.value = levelSelect.options[0].value;
+        }
+    }
+
+
+    function startNewRound(autoPlayMelody = false) {
+        if (playMelodyBtn.textContent === "Restart Game" && !autoPlayMelody) {
+            // If game is in a "completed/restart" state, and this wasn't triggered by restart button, do nothing
+            // The restart logic is handled in the playMelodyBtn event listener.
+            if (!gameInProgress) return; // If gameInProgress is false, it means we are in a "finished" state.
         }
 
-        gameInProgress = true; // Make sure it's set
+        gameInProgress = true;
         userMelody = [];
         generateMelody();
         updatePianoKeyStyles();
         updateProgressDisplay();
-        populateLevelSelection(); // Update level selection dropdown
+        // populateLevelSelection(); // Called after checkAnswer or on init/level change
 
-        feedbackDiv.textContent = `Level ${currentLevel}: ${levelSettings[currentLevel].name}. Listen...`;
+        const settings = getLevelSettings(currentLevel); // UPDATED
+        feedbackDiv.textContent = `${settings.name}. Listen...`;
         feedbackDiv.className = 'feedback';
         
-        canPlayPiano = false; // User can't play until melody is heard
+        canPlayPiano = false;
         playMelodyBtn.disabled = false;
-        playMelodyBtn.textContent = "Play Melody"; // Ensure correct text
-        checkAnswerBtn.disabled = true; // Disabled until user plays notes
+        playMelodyBtn.textContent = "Play Melody";
+        checkAnswerBtn.disabled = true;
 
         if (autoPlayMelody) {
-            setTimeout(() => playSequence(currentMelody), 500); // Short delay before auto-playing
+            setTimeout(() => playSequence(currentMelody), 500);
         }
     }
 
     // --- UI Update & Control Functions ---
     function updateProgressDisplay() {
-        if (!gameInProgress && currentLevel > MAX_LEVEL) return; // Already handled by completion
-        currentLevelDisplay.textContent = `Level: ${currentLevel}`;
+        // if (!gameInProgress && currentLevel > MAX_LEVEL) return; // Old MAX_LEVEL check
+        const settings = getLevelSettings(currentLevel);
+        currentLevelDisplay.textContent = `Level: ${currentLevel}`; // Simpler display name
         progressToNextLevelDisplay.textContent = `Correct: ${correctAnswersInARow}/${CORRECT_ANSWERS_TO_LEVEL_UP}`;
     }
 
@@ -334,24 +429,22 @@ document.addEventListener('DOMContentLoaded', () => {
         checkAnswerBtn.disabled = true;
     }
 
-
     // --- Event Listeners ---
     playMelodyBtn.addEventListener('click', () => {
         if (getAudioContext() === null && playMelodyBtn.textContent !== "Restart Game") {
-            // If context failed to init, don't proceed unless restarting.
-            // Alert already shown in getAudioContext.
             return;
         }
 
         if (playMelodyBtn.textContent === "Restart Game") {
             currentLevel = 1;
             correctAnswersInARow = 0;
-            saveLevel(currentLevel); // Reset saved level on restart
-            gameInProgress = true; // Explicitly set game in progress
-            startNewRound(true); // autoPlay new first melody
+            saveLevel(currentLevel);
+            gameInProgress = true; 
+            populateLevelSelection(); // Update dropdown for new game
+            startNewRound(true);
         } else if (currentMelody.length > 0 && gameInProgress) {
             playSequence(currentMelody);
-        } else if (gameInProgress) { // If no current melody but game is on (e.g. first click)
+        } else if (gameInProgress) {
             startNewRound(true);
         }
     });
@@ -368,12 +461,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     levelSelect.addEventListener('change', (event) => {
         const selectedLevel = parseInt(event.target.value, 10);
-        if (selectedLevel >= 1 && selectedLevel <= loadLevel()) { // Only allow selecting unlocked levels
+        const maxUnlocked = loadLevel();
+        if (selectedLevel >= 1 && selectedLevel <= maxUnlocked) { // Only allow selecting unlocked levels
             currentLevel = selectedLevel;
-            correctAnswersInARow = 0; // Reset progress for the new level
-            startNewRound(true); // Start new round with selected level
+            correctAnswersInARow = 0;
+            saveLevel(currentLevel); // Save the manually selected level as current progress
+            populateLevelSelection(); // Re-populate to set the correct selection and lock status
+            startNewRound(true);
         } else {
-            // Optionally provide feedback if an invalid level was somehow selected
             console.warn("Attempted to select an invalid or locked level.");
             levelSelect.value = currentLevel; // Revert selection
         }
@@ -384,25 +479,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const noteName = keyMap[event.code];
         if (noteName) {
             const keyElement = document.querySelector(`.key[data-note="${noteName}"]`);
-            if (keyElement && !keyElement.classList.contains('dimmed-for-level')) {
-                 handlePianoKeyPress(noteName, keyElement);
-            } else if (keyElement && keyElement.classList.contains('dimmed-for-level')){
-                // Optionally play a very soft "thud" or nothing if a dimmed key is pressed via keyboard
-                // For now, do nothing.
-            }
+            // Pass keyElement to handlePianoKeyPress for dimmed check
+            handlePianoKeyPress(noteName, keyElement);
         }
     });
 
     // --- Initialization ---
     createPiano();
-    currentLevel = loadLevel(); // Load level on init
-    populateLevelSelection(); // Populate dropdown on init
-    // Don't start a round immediately, let user click "Play Melody" first.
-    // Update UI for initial state.
+    currentLevel = loadLevel();
+    populateLevelSelection();
+    
     playMelodyBtn.disabled = false;
     checkAnswerBtn.disabled = true;
     canPlayPiano = false;
-    updatePianoKeyStyles(); // Dim keys based on level 1 initially
+    updatePianoKeyStyles();
     updateProgressDisplay();
-    feedbackDiv.textContent = `Welcome! Click "Play Melody" to start Level ${currentLevel}.`;
+    const initialSettings = getLevelSettings(currentLevel);
+    feedbackDiv.textContent = `Welcome! Click "Play Melody" to start ${initialSettings.name}.`;
 });
