@@ -8,7 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const levelSelect = document.getElementById('levelSelect');
 
     let audioContext;
-    let keepAliveNode = null; // NEW: For the silent keep-alive oscillator
+    let keepAliveNode = null; 
     let currentMelody = [];
     let userMelody = [];
     let canPlayPiano = false;
@@ -132,14 +132,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Audio Functions ---
-    // MODIFIED getAudioContext function
     function getAudioContext() {
-        // Check if AudioContext is supported by the browser
         if (typeof window.AudioContext === 'undefined' && typeof window.webkitAudioContext === 'undefined') {
-            if (!audioContext) { // Alert only once if it's already null (signaling no support)
+            if (!audioContext) { 
                 alert('Web Audio API is not supported in this browser');
             }
-            audioContext = null; // Explicitly set to null to indicate no support
+            audioContext = null; 
             return null;
         }
 
@@ -147,45 +145,57 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 
-                // Create and start the keep-alive node as soon as context is initialized.
-                // This node runs silently in the background to keep the audio hardware active.
-                if (audioContext && !keepAliveNode) { // Check audioContext again (created successfully)
+                if (audioContext && !keepAliveNode) { 
                     const oscillator = audioContext.createOscillator();
                     const gain = audioContext.createGain();
-                    oscillator.frequency.setValueAtTime(20, audioContext.currentTime); // Very low frequency (inaudible)
-                    gain.gain.setValueAtTime(0, audioContext.currentTime);           // Gain of 0 (silent)
+                    oscillator.frequency.setValueAtTime(20, audioContext.currentTime); 
+                    gain.gain.setValueAtTime(0, audioContext.currentTime);           
                     oscillator.connect(gain);
                     gain.connect(audioContext.destination);
-                    oscillator.start(); // Start immediately
-                    keepAliveNode = { oscillator, gain }; // Store for potential future use (e.g., cleanup)
+                    oscillator.start(); 
+                    keepAliveNode = { oscillator, gain }; 
                     console.log("AudioContext created and keep-alive node initialized.");
                 }
             } catch (e) {
                 alert('Web Audio API is not supported in this browser');
                 console.error("Error creating AudioContext:", e);
-                audioContext = null; // Ensure audioContext is null if creation fails
+                audioContext = null; 
                 return null;
             }
         }
 
-        // Attempt to resume the AudioContext if it's in a suspended state.
-        // This is necessary for browsers that implement autoplay policies.
-        // This function is called from user gesture handlers (button clicks, key presses),
-        // which is the correct time to attempt resuming the context.
         if (audioContext && audioContext.state === 'suspended') {
             audioContext.resume().then(() => {
                 console.log("AudioContext resumed successfully.");
             }).catch(err => {
                 console.error("Error resuming AudioContext:", err);
-                // Potentially inform the user that audio might not work.
             });
         }
         return audioContext;
     }
 
+    // NEW: Function to prime the audio system
+    function primeAudioSystem(context) {
+        if (!context || context.state !== 'running') {
+            // console.log("Prime: Audio context not available or not running.");
+            return;
+        }
+        try {
+            const bufferSource = context.createBufferSource();
+            const buffer = context.createBuffer(1, 1, context.sampleRate); // 1 channel, 1 frame (shortest possible)
+            bufferSource.buffer = buffer; // Buffer is initialized to silence
+            bufferSource.connect(context.destination);
+            bufferSource.start();
+            // console.log("Audio system primed.");
+        } catch (e) {
+            console.error("Error priming audio system:", e);
+        }
+    }
+
+
     function playNote(noteName, duration = 0.5, delay = 0) {
-        const context = getAudioContext(); // This will now also handle resume and keep-alive.
-        if(!context) return; // If context is null (not supported or error), do nothing.
+        const context = getAudioContext(); 
+        if(!context) return; 
         
         const frequency = noteFrequencies[noteName];
         if (!frequency) { console.warn(`Freq not found: ${noteName}`); return; }
@@ -195,10 +205,9 @@ document.addEventListener('DOMContentLoaded', () => {
         oscillator.type = 'sine';
         oscillator.frequency.setValueAtTime(frequency, context.currentTime + delay);
         
-        // Envelope: start at 0 gain, ramp up, then ramp down to 0
         gainNode.gain.setValueAtTime(0, context.currentTime + delay);
-        gainNode.gain.linearRampToValueAtTime(0.6, context.currentTime + delay + 0.05); // Quick attack
-        gainNode.gain.linearRampToValueAtTime(0, context.currentTime + delay + duration); // Release
+        gainNode.gain.linearRampToValueAtTime(0.6, context.currentTime + delay + 0.05); 
+        gainNode.gain.linearRampToValueAtTime(0, context.currentTime + delay + duration); 
         
         oscillator.connect(gainNode);
         gainNode.connect(context.destination);
@@ -207,7 +216,29 @@ document.addEventListener('DOMContentLoaded', () => {
         oscillator.stop(context.currentTime + delay + duration);
     }
 
+    // MODIFIED playSequence to include priming
     async function playSequence(notes) {
+        const context = getAudioContext();
+        if (!context) {
+            console.warn("playSequence: No audio context. Cannot play sequence.");
+            // Gracefully handle UI if audio isn't available
+            if (gameInProgress) {
+                canPlayPiano = false; // Or true, depending on desired behavior
+                checkAnswerBtn.disabled = true;
+                playMelodyBtn.disabled = false;
+                feedbackDiv.textContent = `Your turn! (Audio not available). Play the ${currentMelody.length}-note melody.`;
+                feedbackDiv.className = 'feedback incorrect'; // Indicate an issue
+            }
+            return;
+        }
+
+        // Prime the audio system if there are notes to play and context is running
+        if (notes && notes.length > 0 && context.state === 'running') {
+            primeAudioSystem(context);
+            // Optional tiny delay after priming, though usually not needed.
+            // await new Promise(resolve => setTimeout(resolve, 10)); 
+        }
+
         if (!gameInProgress) return;
         disableControlsDuringPlayback();
         const settings = getLevelSettings(currentLevel);
@@ -253,10 +284,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function handlePianoKeyPress(noteName, keyElement = null) {
-        // First call to getAudioContext() might be here if user plays piano before melody.
-        // This will initialize/resume the context.
         const context = getAudioContext(); 
-        if (!context) return; // No audio context, can't play.
+        if (!context) return; 
 
         if (!canPlayPiano || !gameInProgress) return;
         
@@ -453,7 +482,8 @@ document.addEventListener('DOMContentLoaded', () => {
         checkAnswerBtn.disabled = true;
 
         if (autoPlayMelody) {
-            setTimeout(() => playSequence(currentMelody), 500);
+            // The playSequence call is inside a setTimeout, so priming happens right before playback.
+            setTimeout(() => playSequence(currentMelody), 500); 
         }
     }
 
@@ -471,14 +501,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Event Listeners ---
     playMelodyBtn.addEventListener('click', () => {
-        // This call to getAudioContext() is crucial for initializing and resuming the context on first user interaction.
         const context = getAudioContext();
         if (context === null && playMelodyBtn.textContent !== "Restart Game") {
-             // If context is null (not supported or failed creation), and not trying to restart, then abort.
             return;
         }
-        // If context is not null, or if it's a restart action, proceed.
-        // The getAudioContext() function itself attempts to resume if suspended.
 
         if (playMelodyBtn.textContent === "Restart Game") {
             currentLevel = 1;
@@ -486,11 +512,11 @@ document.addEventListener('DOMContentLoaded', () => {
             saveLevel(currentLevel);
             gameInProgress = true; 
             populateLevelSelection();
-            startNewRound(true);
+            startNewRound(true); // playSequence is called inside here (with priming)
         } else if (currentMelody.length > 0 && gameInProgress) {
-            playSequence(currentMelody);
-        } else if (gameInProgress) { // Handles starting the very first round or a new round if melody isn't set
-            startNewRound(true);
+            playSequence(currentMelody); // Priming happens inside playSequence
+        } else if (gameInProgress) { 
+            startNewRound(true); // playSequence is called inside here (with priming)
         }
     });
 
@@ -512,7 +538,7 @@ document.addEventListener('DOMContentLoaded', () => {
             correctAnswersInARow = 0;
             saveLevel(currentLevel); 
             populateLevelSelection(); 
-            startNewRound(true);
+            startNewRound(true); // Priming will happen via playSequence
         } else {
             console.warn("Attempted to select an invalid or locked level.");
             levelSelect.value = currentLevel; 
@@ -520,16 +546,15 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.addEventListener('keydown', (event) => {
-        if (event.repeat || !gameInProgress) return; // Don't process if key is held, or game not active
+        if (event.repeat || !gameInProgress) return; 
         
-        // Check canPlayPiano after getAudioContext, as piano might be first interaction
-        const context = getAudioContext(); // Ensure context is active/resumed
+        const context = getAudioContext(); 
         if (!context || !canPlayPiano) return; 
 
         const noteName = keyMap[event.code];
         if (noteName) {
             const keyElement = document.querySelector(`.key[data-note="${noteName}"]`);
-            handlePianoKeyPress(noteName, keyElement); // handlePianoKeyPress itself no longer calls getAudioContext
+            handlePianoKeyPress(noteName, keyElement); 
         }
     });
 
@@ -538,13 +563,11 @@ document.addEventListener('DOMContentLoaded', () => {
     currentLevel = loadLevel();
     populateLevelSelection();
     
-    // Initial UI state
-    playMelodyBtn.disabled = false; // Enable Play Melody button to start
+    playMelodyBtn.disabled = false; 
     checkAnswerBtn.disabled = true;
-    canPlayPiano = false; // Piano not playable until melody is heard
+    canPlayPiano = false; 
     updatePianoKeyStyles();
     updateProgressDisplay();
     const initialSettings = getLevelSettings(currentLevel);
     feedbackDiv.textContent = `Welcome! Click "Play Melody" to start ${initialSettings.name}.`;
-    // Note: getAudioContext() will be called upon the first click of "Play Melody" or a piano key press.
 });
