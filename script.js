@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const levelSelect = document.getElementById('levelSelect');
 
     let audioContext;
+    let keepAliveNode = null; // NEW: For the silent keep-alive oscillator
     let currentMelody = [];
     let userMelody = [];
     let canPlayPiano = false;
@@ -16,7 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentLevel;
     let correctAnswersInARow = 0;
     const CORRECT_ANSWERS_TO_LEVEL_UP = 3;
-    const LOCAL_STORAGE_LEVEL_KEY = 'melodyPitchInfiniteCurrentLevel'; // Use a new key for infinite version
+    const LOCAL_STORAGE_LEVEL_KEY = 'melodyPitchInfiniteCurrentLevel';
 
     const noteFrequencies = {
         'G3': 196.00, 'G#3': 207.65, 'A3': 220.00, 'A#3': 233.08, 'B3': 246.94,
@@ -26,7 +27,6 @@ document.addEventListener('DOMContentLoaded', () => {
         'C5': 523.25, 'C#5': 554.37, 'D5': 587.33, 'D#5': 622.25, 'E5': 659.25,
     };
     
-    // Note definitions for getLevelSettings - suffixed with _gs to avoid potential conflicts
     const allChromaticC4B4_gs = ['C4','C#4','D4','D#4','E4','F4','F#4','G4','G#4','A4','A#4','B4'];
     const allChromaticC4C5_gs = [...allChromaticC4B4_gs, 'C5'];
     const cMajorScaleC4B4_gs = ['C4','D4','E4','F4','G4','A4','B4'];
@@ -42,7 +42,6 @@ document.addEventListener('DOMContentLoaded', () => {
         'KeyU': 'A#4', 'KeyJ': 'B4', 'KeyK': 'C5'
     };
 
-    // --- NEW: getLevelSettings function ---
     function getLevelSettings(level) {
         let melodyLength;
         let notePool;
@@ -60,7 +59,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (level === 5) {
             melodyLength = 1; notePool = ['C4', 'C5']; name = "1 Note: C4 vs C5 (Octave)"; tempo = 900;
         }
-        else if (level >= 6 && level <= 25) { // PHASE 1: Two-Note Melodies
+        else if (level >= 6 && level <= 25) { 
             melodyLength = 2;
             tempo = 850 - Math.floor((level - 6) / 4) * 25;
             const subPhase = level - 5;
@@ -70,14 +69,14 @@ document.addEventListener('DOMContentLoaded', () => {
             else if (subPhase <= 12) { notePool = cMajorScaleC4B4_gs.slice(0, 5); name = `2 Notes: C-G Diatonic Frags (${subPhase-9}/3)`; }
             else if (subPhase <= 15) { notePool = cMajorScaleC4B4_gs; name = `2 Notes: C Maj Scale Frags (${subPhase-12}/3)`; }
             else if (subPhase <= 17) { notePool = ['C4', 'C#4', 'D4']; name = `2 Notes: Chromatic C-C#-D (${subPhase-15}/2)`; }
-            else { // Levels 23-25
-                if (subPhase <= 18) { notePool = allChromaticC4B4_gs.slice(0,3); // C, C#, D
-                } else if (subPhase <= 19) { notePool = allChromaticC4B4_gs.slice(0,4); // C, C#, D, D#
-                } else { notePool = allChromaticC4B4_gs.slice(0,5); } // C, C#, D, D#, E
+            else { 
+                if (subPhase <= 18) { notePool = allChromaticC4B4_gs.slice(0,3); 
+                } else if (subPhase <= 19) { notePool = allChromaticC4B4_gs.slice(0,4); 
+                } else { notePool = allChromaticC4B4_gs.slice(0,5); } 
                 name = `2 Notes: Chromatic Frags (${subPhase-17}/3)`;
             }
         }
-        else if (level >= 26 && level <= 55) { // PHASE 2: Three-Note Melodies
+        else if (level >= 26 && level <= 55) { 
             melodyLength = 3;
             tempo = 750 - Math.floor((level - 26) / 5) * 20;
             const subPhase = level - 25;
@@ -87,13 +86,13 @@ document.addEventListener('DOMContentLoaded', () => {
             else if (subPhase <= 17) { notePool = cMajorScaleC4B4_gs.slice(0, 5); name = `3 Notes: C-G Diatonic (${subPhase-12}/5)`;}
             else if (subPhase <= 22) { notePool = cMajorScaleC4C5_gs; name = `3 Notes: C Maj Scale (${subPhase-17}/5)`; }
             else if (subPhase <= 26) { notePool = ['C4','D4','E4','F4','F#4','G4']; name = `3 Notes: Diatonic + F# (${subPhase-22}/4)`; }
-            else { // Levels 52-55
-                if (subPhase <= 28) { notePool = allChromaticC4B4_gs.slice(0,5); // C,C#,D,D#,E
-                } else { notePool = allChromaticC4B4_gs.slice(0,7); } // C to F#
+            else { 
+                if (subPhase <= 28) { notePool = allChromaticC4B4_gs.slice(0,5); 
+                } else { notePool = allChromaticC4B4_gs.slice(0,7); } 
                 name = `3 Notes: Chromatic Frags (${subPhase-26}/4)`;
             }
         }
-         else if (level >= 56 && level <= 90) { // PHASE 3: Four-Note Melodies
+         else if (level >= 56 && level <= 90) { 
             melodyLength = 4;
             tempo = 650 - Math.floor((level - 56) / 6) * 15;
             const subPhase = level - 55;
@@ -104,11 +103,11 @@ document.addEventListener('DOMContentLoaded', () => {
             else if (subPhase <= 30) { notePool = allChromaticC4B4_gs.slice(0,7); name = `4 Notes: Chromatic C-F# (${subPhase-24}/6)`; }
             else { notePool = allChromaticC4B4_gs; name = `4 Notes: Chromatic C-B (${subPhase-30}/5)`; }
         }
-        else { // PHASE 4+: Longer Melodies
+        else { 
             const baseLevelForPhase4 = 90;
             const levelsIntoPhase4 = level - baseLevelForPhase4;
             melodyLength = 5 + Math.floor(levelsIntoPhase4 / 40);
-            melodyLength = Math.min(melodyLength, 8); // Cap melody length
+            melodyLength = Math.min(melodyLength, 8); 
             tempo = 550 - Math.floor(levelsIntoPhase4 / 8) * 10 - (melodyLength - 4) * 30;
             const stageInLength = levelsIntoPhase4 % 40;
             if (stageInLength < 8) { notePool = cMajorPentatonicC4C5_gs; name = `${melodyLength} Notes: C Pentatonic`; }
@@ -118,36 +117,76 @@ document.addEventListener('DOMContentLoaded', () => {
             else { notePool = allChromaticC4C5_gs; name = `${melodyLength} Notes: Chromatic C-C (Octave)`; }
             if (melodyLength >=6 && level > 150) {
                 const widerPoolBase = ['G3','A3','B3', ...allChromaticC4C5_gs, 'D5', 'E5'];
-                notePool = widerPoolBase.filter(n => noteFrequencies[n]); // Ensure all notes have frequencies
+                notePool = widerPoolBase.filter(n => noteFrequencies[n]); 
                 name = `${melodyLength} Notes: Wider Chromatic`;
             }
         }
-        tempo = Math.max(350, tempo); // Absolute minimum tempo
+        tempo = Math.max(350, tempo); 
         return {
             levelNumber: level,
             melodyLength,
-            notePool: (notePool && notePool.length > 0) ? notePool : ['C4'], // Fallback
+            notePool: (notePool && notePool.length > 0) ? notePool : ['C4'], 
             name: `Lvl ${level}: ${name}`,
             interval: tempo
         };
     }
 
-    // --- Audio Functions --- (Mostly Unchanged)
+    // --- Audio Functions ---
+    // MODIFIED getAudioContext function
     function getAudioContext() {
+        // Check if AudioContext is supported by the browser
+        if (typeof window.AudioContext === 'undefined' && typeof window.webkitAudioContext === 'undefined') {
+            if (!audioContext) { // Alert only once if it's already null (signaling no support)
+                alert('Web Audio API is not supported in this browser');
+            }
+            audioContext = null; // Explicitly set to null to indicate no support
+            return null;
+        }
+
         if (!audioContext) {
             try {
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // Create and start the keep-alive node as soon as context is initialized.
+                // This node runs silently in the background to keep the audio hardware active.
+                if (audioContext && !keepAliveNode) { // Check audioContext again (created successfully)
+                    const oscillator = audioContext.createOscillator();
+                    const gain = audioContext.createGain();
+                    oscillator.frequency.setValueAtTime(20, audioContext.currentTime); // Very low frequency (inaudible)
+                    gain.gain.setValueAtTime(0, audioContext.currentTime);           // Gain of 0 (silent)
+                    oscillator.connect(gain);
+                    gain.connect(audioContext.destination);
+                    oscillator.start(); // Start immediately
+                    keepAliveNode = { oscillator, gain }; // Store for potential future use (e.g., cleanup)
+                    console.log("AudioContext created and keep-alive node initialized.");
+                }
             } catch (e) {
                 alert('Web Audio API is not supported in this browser');
-                console.error(e);
+                console.error("Error creating AudioContext:", e);
+                audioContext = null; // Ensure audioContext is null if creation fails
+                return null;
             }
+        }
+
+        // Attempt to resume the AudioContext if it's in a suspended state.
+        // This is necessary for browsers that implement autoplay policies.
+        // This function is called from user gesture handlers (button clicks, key presses),
+        // which is the correct time to attempt resuming the context.
+        if (audioContext && audioContext.state === 'suspended') {
+            audioContext.resume().then(() => {
+                console.log("AudioContext resumed successfully.");
+            }).catch(err => {
+                console.error("Error resuming AudioContext:", err);
+                // Potentially inform the user that audio might not work.
+            });
         }
         return audioContext;
     }
 
     function playNote(noteName, duration = 0.5, delay = 0) {
-        const context = getAudioContext();
-        if(!context) return;
+        const context = getAudioContext(); // This will now also handle resume and keep-alive.
+        if(!context) return; // If context is null (not supported or error), do nothing.
+        
         const frequency = noteFrequencies[noteName];
         if (!frequency) { console.warn(`Freq not found: ${noteName}`); return; }
 
@@ -155,11 +194,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const gainNode = context.createGain();
         oscillator.type = 'sine';
         oscillator.frequency.setValueAtTime(frequency, context.currentTime + delay);
+        
+        // Envelope: start at 0 gain, ramp up, then ramp down to 0
         gainNode.gain.setValueAtTime(0, context.currentTime + delay);
-        gainNode.gain.linearRampToValueAtTime(0.6, context.currentTime + delay + 0.05);
-        gainNode.gain.linearRampToValueAtTime(0, context.currentTime + delay + duration);
+        gainNode.gain.linearRampToValueAtTime(0.6, context.currentTime + delay + 0.05); // Quick attack
+        gainNode.gain.linearRampToValueAtTime(0, context.currentTime + delay + duration); // Release
+        
         oscillator.connect(gainNode);
         gainNode.connect(context.destination);
+        
         oscillator.start(context.currentTime + delay);
         oscillator.stop(context.currentTime + delay + duration);
     }
@@ -167,7 +210,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function playSequence(notes) {
         if (!gameInProgress) return;
         disableControlsDuringPlayback();
-        const settings = getLevelSettings(currentLevel); // UPDATED
+        const settings = getLevelSettings(currentLevel);
         const interval = settings.interval || 700;
 
         for (let i = 0; i < notes.length; i++) {
@@ -197,8 +240,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updatePianoKeyStyles() {
-        const currentSettings = getLevelSettings(currentLevel); // UPDATED
-        const currentNotePool = currentSettings?.notePool || pianoKeyRenderOrder; // Use pianoKeyRenderOrder as a fallback
+        const currentSettings = getLevelSettings(currentLevel);
+        const currentNotePool = currentSettings?.notePool || pianoKeyRenderOrder;
         document.querySelectorAll('.piano .key').forEach(keyEl => {
             const note = keyEl.dataset.note;
             if (currentNotePool.includes(note)) {
@@ -210,17 +253,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function handlePianoKeyPress(noteName, keyElement = null) {
+        // First call to getAudioContext() might be here if user plays piano before melody.
+        // This will initialize/resume the context.
+        const context = getAudioContext(); 
+        if (!context) return; // No audio context, can't play.
+
         if (!canPlayPiano || !gameInProgress) return;
         
-        const currentSettings = getLevelSettings(currentLevel); // UPDATED
+        const currentSettings = getLevelSettings(currentLevel);
         const currentNotePool = currentSettings?.notePool || pianoKeyRenderOrder;
 
-        // Only play/register if the note is part of the current level's pool or if all keys are active (e.g. pianoKeyRenderOrder fallback)
-        // The dimmed-for-level class should visually guide the user, this is an additional check.
         if (!currentNotePool.includes(noteName)) {
             const actualElement = keyElement || document.querySelector(`.key[data-note="${noteName}"]`);
             if(actualElement && actualElement.classList.contains('dimmed-for-level')) {
-                return; // Do not process if key is visually dimmed for the level
+                return; 
             }
         }
 
@@ -241,27 +287,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Game Logic ---
     function generateMelody() {
-        const settings = getLevelSettings(currentLevel); // UPDATED
+        const settings = getLevelSettings(currentLevel);
         currentMelody = [];
         const notePool = settings.notePool;
         const length = settings.melodyLength;
 
         if (!notePool || notePool.length === 0) {
             console.error("Note pool empty for level:", currentLevel, "Settings:", settings);
-            currentMelody = ['C4']; return; // Fallback
+            currentMelody = ['C4']; return;
         }
         
-        if (length === 1 && notePool.length > 0){ // Ensure this comes before the more general 'else'
+        if (length === 1 && notePool.length > 0){
             currentMelody.push(notePool[Math.floor(Math.random() * notePool.length)]);
         } else if (length === 2 && notePool.length === 2) {
             currentMelody.push(notePool[0]);
             currentMelody.push(notePool[1]);
             if (Math.random() < 0.5) currentMelody.reverse();
         } else {
-            let lastNote = null; // To avoid immediate repetition for short melodies
+            let lastNote = null; 
             for (let i = 0; i < length; i++) {
                 let nextNote;
-                let attempts = 0; // Prevent infinite loop if pool is too small
+                let attempts = 0; 
                 do {
                      nextNote = notePool[Math.floor(Math.random() * notePool.length)];
                      attempts++;
@@ -279,7 +325,7 @@ document.addEventListener('DOMContentLoaded', () => {
         disableControlsDuringPlayback();
 
         const targetLength = currentMelody.length;
-        const userPlayedSegment = userMelody.slice(-targetLength); // Check only the last N notes
+        const userPlayedSegment = userMelody.slice(-targetLength);
         let correct = userPlayedSegment.length === targetLength &&
                       currentMelody.every((note, index) => note === userPlayedSegment[index]);
 
@@ -292,9 +338,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentLevel++;
                 correctAnswersInARow = 0;
                 saveLevel(currentLevel);
-                const newLevelSettings = getLevelSettings(currentLevel); // UPDATED
+                const newLevelSettings = getLevelSettings(currentLevel);
                 feedbackDiv.textContent = `Level Up! Now on ${newLevelSettings.name}`;
-                if (currentLevel % 25 === 0) { // Optional milestone message
+                if (currentLevel % 25 === 0) { 
                     feedbackDiv.textContent += " Great progress!";
                 }
             } else {
@@ -302,7 +348,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             setTimeout(() => {
                 if(gameInProgress) startNewRound(true);
-            }, 1500); // Shorter delay for correct
+            }, 1500);
         } else {
             correctAnswersInARow = 0;
             feedbackDiv.textContent = `Not quite. Melody was: ${currentMelody.join(', ')}. You played: ${userPlayedSegment.join(', ')}. Try this level again.`;
@@ -311,12 +357,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 if(gameInProgress) startNewRound(true);
             }, 2500);
         }
-        userMelody = []; // Clear user melody after checking
+        userMelody = []; 
         updateProgressDisplay();
         populateLevelSelection();
     }
 
-    function handleGameCompletion() { // This is now more like a "high score" or "restart" point
+    function handleGameCompletion() { 
         gameInProgress = false;
         canPlayPiano = false;
         const finalLevelSettings = getLevelSettings(currentLevel);
@@ -345,8 +391,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const savedLevel = localStorage.getItem(LOCAL_STORAGE_LEVEL_KEY);
             if (savedLevel) {
                 let level = parseInt(savedLevel, 10);
-                if (level >= 1) { // No hard upper cap, but getLevelSettings might have practical limits
-                    return Math.min(level, 999); // Practical cap for safety/UI
+                if (level >= 1) { 
+                    return Math.min(level, 999); 
                 }
             }
         } catch (e) {
@@ -358,41 +404,37 @@ document.addEventListener('DOMContentLoaded', () => {
     function populateLevelSelection() {
         levelSelect.innerHTML = '';
         const maxUnlockedLevel = loadLevel();
-        const practicalDropdownLimit = Math.max(maxUnlockedLevel, 200); // Show at least 200 or current unlocked
+        const practicalDropdownLimit = Math.max(maxUnlockedLevel, 200); 
 
         for (let i = 1; i <= practicalDropdownLimit; i++) {
-            if (i > maxUnlockedLevel && i > currentLevel + 5 && i !== practicalDropdownLimit) { // Don't list too many future levels
+            if (i > maxUnlockedLevel && i > currentLevel + 5 && i !== practicalDropdownLimit) { 
                 if (i % 10 === 0 || i % 25 === 0 ) { /* show some milestones */ }
                 else { continue; }
             }
             const option = document.createElement('option');
             option.value = i;
             const levelData = getLevelSettings(i);
-            option.textContent = levelData.name.length > 50 ? `Lvl ${i}: ${levelData.melodyLength} notes...` : levelData.name; // Truncate long names
+            option.textContent = levelData.name.length > 50 ? `Lvl ${i}: ${levelData.melodyLength} notes...` : levelData.name; 
             
             if (i > maxUnlockedLevel) {
-                option.disabled = true; // Visually indicate locked levels
+                option.disabled = true; 
                 option.textContent += " (Locked)";
             }
             levelSelect.appendChild(option);
         }
         
-        // Ensure currentLevel is selectable if it exists or is maxUnlockedLevel
         if (document.querySelector(`option[value="${currentLevel}"]`)) {
              levelSelect.value = currentLevel;
         } else if (maxUnlockedLevel > 0 && document.querySelector(`option[value="${maxUnlockedLevel}"]`)) {
-             levelSelect.value = maxUnlockedLevel; // Fallback to highest unlocked if current isn't directly listed
+             levelSelect.value = maxUnlockedLevel; 
         } else if (levelSelect.options.length > 0) {
              levelSelect.value = levelSelect.options[0].value;
         }
     }
 
-
     function startNewRound(autoPlayMelody = false) {
         if (playMelodyBtn.textContent === "Restart Game" && !autoPlayMelody) {
-            // If game is in a "completed/restart" state, and this wasn't triggered by restart button, do nothing
-            // The restart logic is handled in the playMelodyBtn event listener.
-            if (!gameInProgress) return; // If gameInProgress is false, it means we are in a "finished" state.
+            if (!gameInProgress) return; 
         }
 
         gameInProgress = true;
@@ -400,9 +442,8 @@ document.addEventListener('DOMContentLoaded', () => {
         generateMelody();
         updatePianoKeyStyles();
         updateProgressDisplay();
-        // populateLevelSelection(); // Called after checkAnswer or on init/level change
 
-        const settings = getLevelSettings(currentLevel); // UPDATED
+        const settings = getLevelSettings(currentLevel);
         feedbackDiv.textContent = `${settings.name}. Listen...`;
         feedbackDiv.className = 'feedback';
         
@@ -418,9 +459,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- UI Update & Control Functions ---
     function updateProgressDisplay() {
-        // if (!gameInProgress && currentLevel > MAX_LEVEL) return; // Old MAX_LEVEL check
         const settings = getLevelSettings(currentLevel);
-        currentLevelDisplay.textContent = `Level: ${currentLevel}`; // Simpler display name
+        currentLevelDisplay.textContent = `Level: ${currentLevel}`;
         progressToNextLevelDisplay.textContent = `Correct: ${correctAnswersInARow}/${CORRECT_ANSWERS_TO_LEVEL_UP}`;
     }
 
@@ -431,20 +471,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Event Listeners ---
     playMelodyBtn.addEventListener('click', () => {
-        if (getAudioContext() === null && playMelodyBtn.textContent !== "Restart Game") {
+        // This call to getAudioContext() is crucial for initializing and resuming the context on first user interaction.
+        const context = getAudioContext();
+        if (context === null && playMelodyBtn.textContent !== "Restart Game") {
+             // If context is null (not supported or failed creation), and not trying to restart, then abort.
             return;
         }
+        // If context is not null, or if it's a restart action, proceed.
+        // The getAudioContext() function itself attempts to resume if suspended.
 
         if (playMelodyBtn.textContent === "Restart Game") {
             currentLevel = 1;
             correctAnswersInARow = 0;
             saveLevel(currentLevel);
             gameInProgress = true; 
-            populateLevelSelection(); // Update dropdown for new game
+            populateLevelSelection();
             startNewRound(true);
         } else if (currentMelody.length > 0 && gameInProgress) {
             playSequence(currentMelody);
-        } else if (gameInProgress) {
+        } else if (gameInProgress) { // Handles starting the very first round or a new round if melody isn't set
             startNewRound(true);
         }
     });
@@ -462,25 +507,29 @@ document.addEventListener('DOMContentLoaded', () => {
     levelSelect.addEventListener('change', (event) => {
         const selectedLevel = parseInt(event.target.value, 10);
         const maxUnlocked = loadLevel();
-        if (selectedLevel >= 1 && selectedLevel <= maxUnlocked) { // Only allow selecting unlocked levels
+        if (selectedLevel >= 1 && selectedLevel <= maxUnlocked) { 
             currentLevel = selectedLevel;
             correctAnswersInARow = 0;
-            saveLevel(currentLevel); // Save the manually selected level as current progress
-            populateLevelSelection(); // Re-populate to set the correct selection and lock status
+            saveLevel(currentLevel); 
+            populateLevelSelection(); 
             startNewRound(true);
         } else {
             console.warn("Attempted to select an invalid or locked level.");
-            levelSelect.value = currentLevel; // Revert selection
+            levelSelect.value = currentLevel; 
         }
     });
 
     document.addEventListener('keydown', (event) => {
-        if (event.repeat || !canPlayPiano || !gameInProgress) return;
+        if (event.repeat || !gameInProgress) return; // Don't process if key is held, or game not active
+        
+        // Check canPlayPiano after getAudioContext, as piano might be first interaction
+        const context = getAudioContext(); // Ensure context is active/resumed
+        if (!context || !canPlayPiano) return; 
+
         const noteName = keyMap[event.code];
         if (noteName) {
             const keyElement = document.querySelector(`.key[data-note="${noteName}"]`);
-            // Pass keyElement to handlePianoKeyPress for dimmed check
-            handlePianoKeyPress(noteName, keyElement);
+            handlePianoKeyPress(noteName, keyElement); // handlePianoKeyPress itself no longer calls getAudioContext
         }
     });
 
@@ -489,11 +538,13 @@ document.addEventListener('DOMContentLoaded', () => {
     currentLevel = loadLevel();
     populateLevelSelection();
     
-    playMelodyBtn.disabled = false;
+    // Initial UI state
+    playMelodyBtn.disabled = false; // Enable Play Melody button to start
     checkAnswerBtn.disabled = true;
-    canPlayPiano = false;
+    canPlayPiano = false; // Piano not playable until melody is heard
     updatePianoKeyStyles();
     updateProgressDisplay();
     const initialSettings = getLevelSettings(currentLevel);
     feedbackDiv.textContent = `Welcome! Click "Play Melody" to start ${initialSettings.name}.`;
+    // Note: getAudioContext() will be called upon the first click of "Play Melody" or a piano key press.
 });
