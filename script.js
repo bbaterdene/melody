@@ -153,18 +153,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!audioContext) {
             try {
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
-
-                if (audioContext && !keepAliveNode) {
-                    const oscillator = audioContext.createOscillator();
-                    const gain = audioContext.createGain();
-                    oscillator.frequency.setValueAtTime(20, audioContext.currentTime);
-                    gain.gain.setValueAtTime(0.00001, audioContext.currentTime); // Tiny non-zero gain
-                    oscillator.connect(gain);
-                    gain.connect(audioContext.destination);
-                    oscillator.start();
-                    keepAliveNode = { oscillator, gain };
-                    console.log("AudioContext created and keep-alive node initialized.");
-                }
             } catch (e) {
                 alert('Web Audio API is not supported in this browser');
                 console.error("Error creating AudioContext:", e);
@@ -173,14 +161,26 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        if (audioContext && audioContext.state === 'suspended') {
-            audioContext.resume().then(() => {
-                console.log("AudioContext resumed successfully.");
-            }).catch(err => {
-                console.error("Error resuming AudioContext:", err);
-            });
-        }
+        // Do NOT resume here; we’ll call resume() inside the first user gesture
         return audioContext;
+    }
+
+    let keepAliveOscillator = null;
+    let keepAliveStarted = false;
+
+    function ensureKeepAlive() {
+        const context = getAudioContext();
+        if (!context || keepAliveStarted) return;
+        const osc = context.createOscillator();
+        const gain = context.createGain();
+        osc.frequency.setValueAtTime(20, context.currentTime);
+        gain.gain.setValueAtTime(0.00001, context.currentTime); // Tiny non-zero gain
+        osc.connect(gain);
+        gain.connect(context.destination);
+        osc.start();
+        keepAliveOscillator = osc;
+        keepAliveStarted = true;
+        console.log("Keep-alive oscillator started.");
     }
 
     function primeAudioSystem(context) {
@@ -211,7 +211,7 @@ document.addEventListener('DOMContentLoaded', () => {
         oscillator.frequency.setValueAtTime(frequency, context.currentTime + delay);
 
         gainNode.gain.setValueAtTime(0, context.currentTime + delay);
-        gainNode.gain.linearRampToValueAtTime(0.6, context.currentTime + delay + 0.05);
+        gainNode.gain.linearRampToValueAtTime(0.6, context.currentTime + delay + 0.08);
         gainNode.gain.linearRampToValueAtTime(0, context.currentTime + delay + duration);
 
         oscillator.connect(gainNode);
@@ -385,13 +385,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             } else {
                 // Unlock challenge failed
+                feedbackMessage = `Unlock attempt for Level ${userPlayedSegment.length > 0 ? challengeTargetLevel : currentLevel} failed. Returning to Level ${maxLevelReached}.`;
+                feedbackDiv.className = 'feedback incorrect';
                 isAttemptingUnlockChallenge = false;
                 currentLevel = maxLevelReached; // Revert to the highest known safe point
                 correctAnswersInARow = 0;
                 challengeTargetLevel = 0; // Reset challenge target
                 saveGameState(); // Save the reverted state
-                feedbackMessage = `Unlock attempt for Level ${userPlayedSegment.length > 0 ? challengeTargetLevel : currentLevel} failed. Returning to Level ${currentLevel}.`;
-                feedbackDiv.className = 'feedback incorrect';
                 populateLevelSelection();
             }
         } else { // Normal play on an unlocked level (currentLevel <= maxLevelReached)
@@ -590,6 +590,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
     playMelodyBtn.addEventListener('click', () => {
         const context = getAudioContext();
+        if (context && context.state === 'suspended') {
+            // First user tap: resume & prime, then proceed
+            context.resume().then(() => {
+                ensureKeepAlive();
+                setTimeout(() => {
+                    if (playMelodyBtn.textContent === "Restart Game") {
+                        currentLevel = 1;
+                        correctAnswersInARow = 0;
+                        isAttemptingUnlockChallenge = false;
+                        challengeTargetLevel = 0;
+                        saveGameState();
+                        gameInProgress = true;
+                        populateLevelSelection();
+                        startNewRound(true);
+                    } else if (currentMelody.length > 0 && gameInProgress) {
+                        playSequence(currentMelody);
+                    } else if (gameInProgress) {
+                        startNewRound(true);
+                    }
+                }, 50);
+            }).catch(err => {
+                console.error("Error resuming AudioContext:", err);
+            });
+            return;
+        }
+
         if (context === null && playMelodyBtn.textContent !== "Restart Game") {
             feedbackDiv.textContent = "Audio system not available. Please try refreshing.";
             feedbackDiv.className = 'feedback incorrect';
@@ -598,17 +624,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (playMelodyBtn.textContent === "Restart Game") {
             currentLevel = 1;
-            // maxLevelReached is NOT reset here, preserving highest achievement
             correctAnswersInARow = 0;
-            isAttemptingUnlockChallenge = false; // Reset challenge state
-            challengeTargetLevel = 0;           // Reset challenge target
-            saveGameState(); 
-            gameInProgress = true; 
-            populateLevelSelection(); 
-            startNewRound(true);
+            isAttemptingUnlockChallenge = false;
+            challengeTargetLevel = 0;
+            saveGameState();
+            gameInProgress = true;
+            populateLevelSelection();
+            if (context && context.state === 'running') {
+                ensureKeepAlive();
+                setTimeout(() => startNewRound(true), 50);
+            } else {
+                startNewRound(true);
+            }
         } else if (currentMelody.length > 0 && gameInProgress) {
             playSequence(currentMelody);
-        } else if (gameInProgress) { 
+        } else if (gameInProgress) {
             startNewRound(true);
         }
     });
@@ -649,7 +679,13 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         populateLevelSelection(); // Re-render to ensure correct selection highlight and (Locked) status
-        startNewRound(true);
+        const ctx = getAudioContext();
+        if (ctx && ctx.state === 'running') {
+            ensureKeepAlive();
+            setTimeout(() => startNewRound(true), 50);
+        } else {
+            startNewRound(true);
+        }
     });
 
     document.addEventListener('keydown', (event) => {
