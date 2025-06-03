@@ -7,6 +7,8 @@ body {
     background-color: #f0f0f0;
     margin: 0;
     color: #333;
+    /* Prevent body scrolling when modal/overlays are not intended to cause it */
+    /* overflow-x: hidden; */ /* Add this if horizontal scroll becomes an issue despite % widths */
 }
 
 .container {
@@ -15,7 +17,10 @@ body {
     border-radius: 8px;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
     text-align: center;
-    min-width: 450px;
+    min-width: 450px; /* Base min-width */
+    width: auto; /* Allow it to shrink if needed */
+    max-width: 95%; /* Prevent it from getting too wide on very large screens if min-width is small */
+    box-sizing: border-box; /* Include padding and border in the element's total width and height */
 }
 
 .progress-info {
@@ -24,6 +29,24 @@ body {
     color: #444;
     font-weight: bold;
 }
+
+.level-selection-container {
+    margin-bottom: 20px;
+}
+
+.level-selection-container label {
+    margin-right: 8px;
+    font-weight: bold;
+}
+
+#levelSelect {
+    padding: 8px 10px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+    font-size: 1em;
+    min-width: 200px; /* Give it some base width */
+}
+
 
 .controls button {
     padding: 10px 15px;
@@ -68,7 +91,9 @@ body {
     justify-content: center;
     margin: 30px 0;
     position: relative;
-    height: 190px;
+    height: 190px; /* Base height */
+    /* overflow-x: auto; */ /* Add if piano must be scrollable horizontally on very small screens */
+    /* padding: 0 5px; */ /* Add padding if keys touch edges */
 }
 
 .key {
@@ -76,12 +101,12 @@ body {
     cursor: pointer;
     user-select: none;
     box-sizing: border-box;
-    transition: background-color 0.1s, opacity 0.3s; /* Added opacity transition */
+    transition: background-color 0.1s, opacity 0.3s;
 }
 
 .key.white {
-    width: 40px;
-    height: 180px;
+    width: 40px; /* Base width */
+    height: 180px; /* Base height */
     background-color: white;
     z-index: 1;
     box-shadow: inset 0 -5px 0 rgba(0,0,0,0.1);
@@ -93,13 +118,13 @@ body {
 }
 
 .key.black {
-    width: 28px;
-    height: 110px;
+    width: 28px; /* Base width */
+    height: 110px; /* Base height */
     background-color: #333;
     color: white;
     z-index: 2;
-    margin-left: -14px;
-    margin-right: -14px;
+    margin-left: -14px; /* Half of black key width */
+    margin-right: -14px; /* Half of black key width */
     box-shadow: inset 0 -3px 0 rgba(255,255,255,0.1);
 }
 .key.black.active {
@@ -107,12 +132,11 @@ body {
     box-shadow: inset 0 -1px 0 rgba(255,255,255,0.1);
 }
 
-/* Style for keys not in the current level's pool */
 .key.dimmed-for-level {
     opacity: 0.3;
-    cursor: not-allowed; /* Optional: change cursor for dimmed keys */
+    cursor: not-allowed;
 }
-.key.dimmed-for-level.active { /* Ensure active state doesn't override dimming too much */
+.key.dimmed-for-level.active {
     opacity: 0.4;
 }
 
@@ -122,4 +146,135 @@ body {
     font-size: 0.9em;
     color: #555;
     line-height: 1.5;
+}
+
+
+/* --- Mobile Adjustments --- */
+
+@media (max-width: 768px) { /* For tablets and larger phones */
+    .container {
+        min-width: 0; /* Remove min-width constraint */
+        width: 95%;   /* Use percentage for flexibility */
+        padding: 15px 15px; /* Adjust padding */
+        margin: 10px auto;
+    }
+
+    h1 {
+        font-size: 1.8em;
+    }
+
+    .progress-info {
+        font-size: 1em;
+        margin-bottom: 12px;
+    }
+
+    .level-selection-container {
+        margin-bottom: 15px;
+    }
+    .level-selection-container label {
+        display: block; /* Stack label on top of select */
+        margin-bottom: 6px;
+        text-align: center; /* Center the label */
+    }
+    #levelSelect {
+        width: 80%; /* Make select take more width */
+        max-width: 300px; /* But not too wide */
+        padding: 10px;
+        font-size: 1em;
+        display: block; /* Make it a block to center with margin auto */
+        margin: 0 auto; /* Center the select dropdown */
+    }
+
+    .controls {
+        display: flex;
+        flex-direction: column; /* Stack buttons vertically */
+        align-items: center;  /* Center buttons in the column */
+        gap: 10px; /* Space between stacked buttons */
+    }
+    .controls button {
+        padding: 12px 10px;
+        font-size: 1em;
+        width: 80%; /* Make buttons wider */
+        max-width: 280px; /* But not excessively wide */
+        margin: 0; /* Remove individual margins as gap handles spacing */
+    }
+
+    .feedback {
+        font-size: 1.1em;
+        min-height: 2.8em;
+        margin: 15px 0;
+    }
+
+    .piano {
+        height: 170px;
+        margin: 25px 0;
+        /* Ensure piano itself doesn't overflow container, keys might need to shrink more if it does */
+        max-width: 100%; /* Prevent piano div from causing horizontal scroll */
+        overflow-x: auto; /* Allow horizontal scroll for piano ONLY if keys are too wide */
+        padding-bottom: 10px; /* Space for scrollbar if it appears */
+    }
+
+    /* Adjust key sizes for better touch targets, keeping proportions */
+    .key.white {
+        width: 38px;  /* Slightly wider for touch, this makes 8 white keys = 304px wide */
+        height: 160px;
+    }
+
+    .key.black {
+        width: 25px;  /* Proportionate to white keys */
+        height: 100px;
+        margin-left: -12.5px; /* Half of new black key width */
+        margin-right: -12.5px;
+    }
+
+    .instructions {
+        font-size: 0.85em;
+        margin-top: 15px;
+    }
+}
+
+
+@media (max-width: 480px) { /* For smaller phones */
+    .container {
+        width: 98%; /* Almost full width */
+        padding: 10px 8px;
+    }
+
+    h1 {
+        font-size: 1.6em;
+    }
+    .progress-info, #levelSelect, .controls button, .feedback {
+        font-size: 0.95em;
+    }
+     #levelSelect {
+        width: 90%;
+        padding: 8px;
+    }
+    .controls button {
+        width: 90%;
+        padding: 10px 8px;
+    }
+
+
+    .piano {
+        height: 160px; /* Further reduce height */
+    }
+    /* For an 8-white-key piano (C4-C5): */
+    /* Total width should ideally fit. (e.g., ~300px screen width for keys) */
+    /* If your piano has 8 white keys for C4-C5: */
+    .key.white {
+        width: 35px;  /* 8 keys * 35px = 280px. This should fit most small phones. */
+        height: 150px;
+    }
+
+    .key.black {
+        width: 22px;
+        height: 90px;
+        margin-left: -11px;
+        margin-right: -11px;
+    }
+
+    .instructions {
+        font-size: 0.8em;
+    }
 }

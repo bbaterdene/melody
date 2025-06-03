@@ -8,16 +8,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const levelSelect = document.getElementById('levelSelect');
 
     let audioContext;
-    let keepAliveNode = null; 
+    let keepAliveNode = null;
     let currentMelody = [];
     let userMelody = [];
     let canPlayPiano = false;
     let gameInProgress = true;
 
-    let currentLevel;
+    let currentLevel = 1;
+    let maxLevelReached = 1;
     let correctAnswersInARow = 0;
+
     const CORRECT_ANSWERS_TO_LEVEL_UP = 3;
+    const CORRECT_ANSWERS_FOR_UNLOCK_CHALLENGE = 6; // For unlocking a new highest level
+
+    let isAttemptingUnlockChallenge = false;
+    let challengeTargetLevel = 0; // The specific locked level being attempted
+
     const LOCAL_STORAGE_LEVEL_KEY = 'melodyPitchInfiniteCurrentLevel';
+    const LOCAL_STORAGE_MAX_LEVEL_KEY = 'melodyPitchInfiniteMaxLevelReached';
 
     const noteFrequencies = {
         'G3': 196.00, 'G#3': 207.65, 'A3': 220.00, 'A#3': 233.08, 'B3': 246.94,
@@ -26,15 +34,15 @@ document.addEventListener('DOMContentLoaded', () => {
         'A#4': 466.16, 'B4': 493.88,
         'C5': 523.25, 'C#5': 554.37, 'D5': 587.33, 'D#5': 622.25, 'E5': 659.25,
     };
-    
-    const allChromaticC4B4_gs = ['C4','C#4','D4','D#4','E4','F4','F#4','G4','G#4','A4','A#4','B4'];
+
+    const allChromaticC4B4_gs = ['C4', 'C#4', 'D4', 'D#4', 'E4', 'F4', 'F#4', 'G4', 'G#4', 'A4', 'A#4', 'B4'];
     const allChromaticC4C5_gs = [...allChromaticC4B4_gs, 'C5'];
-    const cMajorScaleC4B4_gs = ['C4','D4','E4','F4','G4','A4','B4'];
+    const cMajorScaleC4B4_gs = ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4'];
     const cMajorScaleC4C5_gs = [...cMajorScaleC4B4_gs, 'C5'];
-    const cMajorPentatonicC4A4_gs = ['C4','D4','E4','G4','A4'];
+    const cMajorPentatonicC4A4_gs = ['C4', 'D4', 'E4', 'G4', 'A4'];
     const cMajorPentatonicC4C5_gs = [...cMajorPentatonicC4A4_gs, 'C5'];
 
-    const pianoKeyRenderOrder = ['C4','C#4','D4','D#4','E4','F4','F#4','G4','G#4','A4','A#4','B4','C5'];
+    const pianoKeyRenderOrder = ['C4', 'C#4', 'D4', 'D#4', 'E4', 'F4', 'F#4', 'G4', 'G#4', 'A4', 'A#4', 'B4', 'C5'];
 
     const keyMap = {
         'KeyA': 'C4', 'KeyW': 'C#4', 'KeyS': 'D4', 'KeyE': 'D#4', 'KeyD': 'E4',
@@ -59,107 +67,108 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (level === 5) {
             melodyLength = 1; notePool = ['C4', 'C5']; name = "1 Note: C4 vs C5 (Octave)"; tempo = 900;
         }
-        else if (level >= 6 && level <= 25) { 
+        else if (level >= 6 && level <= 25) {
             melodyLength = 2;
             tempo = 850 - Math.floor((level - 6) / 4) * 25;
             const subPhase = level - 5;
             if (subPhase <= 3) { notePool = ['C4', 'D4', 'E4']; name = `2 Notes: C-D-E Steps (${subPhase}/3)`; }
-            else if (subPhase <= 6) { notePool = ['C4', 'E4', 'G4']; name = `2 Notes: C-E-G Skips (${subPhase-3}/3)`; }
-            else if (subPhase <= 9) { notePool = cMajorPentatonicC4A4_gs; name = `2 Notes: C Pentatonic Frags (${subPhase-6}/3)`; }
-            else if (subPhase <= 12) { notePool = cMajorScaleC4B4_gs.slice(0, 5); name = `2 Notes: C-G Diatonic Frags (${subPhase-9}/3)`; }
-            else if (subPhase <= 15) { notePool = cMajorScaleC4B4_gs; name = `2 Notes: C Maj Scale Frags (${subPhase-12}/3)`; }
-            else if (subPhase <= 17) { notePool = ['C4', 'C#4', 'D4']; name = `2 Notes: Chromatic C-C#-D (${subPhase-15}/2)`; }
-            else { 
-                if (subPhase <= 18) { notePool = allChromaticC4B4_gs.slice(0,3); 
-                } else if (subPhase <= 19) { notePool = allChromaticC4B4_gs.slice(0,4); 
-                } else { notePool = allChromaticC4B4_gs.slice(0,5); } 
-                name = `2 Notes: Chromatic Frags (${subPhase-17}/3)`;
+            else if (subPhase <= 6) { notePool = ['C4', 'E4', 'G4']; name = `2 Notes: C-E-G Skips (${subPhase - 3}/3)`; }
+            else if (subPhase <= 9) { notePool = cMajorPentatonicC4A4_gs; name = `2 Notes: C Pentatonic Frags (${subPhase - 6}/3)`; }
+            else if (subPhase <= 12) { notePool = cMajorScaleC4B4_gs.slice(0, 5); name = `2 Notes: C-G Diatonic Frags (${subPhase - 9}/3)`; }
+            else if (subPhase <= 15) { notePool = cMajorScaleC4B4_gs; name = `2 Notes: C Maj Scale Frags (${subPhase - 12}/3)`; }
+            else if (subPhase <= 17) { notePool = ['C4', 'C#4', 'D4']; name = `2 Notes: Chromatic C-C#-D (${subPhase - 15}/2)`; }
+            else {
+                if (subPhase <= 18) { notePool = allChromaticC4B4_gs.slice(0, 3);
+                } else if (subPhase <= 19) { notePool = allChromaticC4B4_gs.slice(0, 4);
+                } else { notePool = allChromaticC4B4_gs.slice(0, 5); }
+                name = `2 Notes: Chromatic Frags (${subPhase - 17}/3)`;
             }
         }
-        else if (level >= 26 && level <= 55) { 
+        else if (level >= 26 && level <= 55) {
             melodyLength = 3;
             tempo = 750 - Math.floor((level - 26) / 5) * 20;
             const subPhase = level - 25;
             if (subPhase <= 4) { notePool = ['C4', 'D4', 'E4']; name = `3 Notes: C-D-E Steps (${subPhase}/4)`; }
-            else if (subPhase <= 8) { notePool = cMajorPentatonicC4C5_gs; name = `3 Notes: C Pentatonic (${subPhase-4}/4)`; }
-            else if (subPhase <= 12) { notePool = ['C4', 'E4', 'G4', 'C5']; name = `3 Notes: C Maj Arp (${subPhase-8}/4)`; }
-            else if (subPhase <= 17) { notePool = cMajorScaleC4B4_gs.slice(0, 5); name = `3 Notes: C-G Diatonic (${subPhase-12}/5)`;}
-            else if (subPhase <= 22) { notePool = cMajorScaleC4C5_gs; name = `3 Notes: C Maj Scale (${subPhase-17}/5)`; }
-            else if (subPhase <= 26) { notePool = ['C4','D4','E4','F4','F#4','G4']; name = `3 Notes: Diatonic + F# (${subPhase-22}/4)`; }
-            else { 
-                if (subPhase <= 28) { notePool = allChromaticC4B4_gs.slice(0,5); 
-                } else { notePool = allChromaticC4B4_gs.slice(0,7); } 
-                name = `3 Notes: Chromatic Frags (${subPhase-26}/4)`;
+            else if (subPhase <= 8) { notePool = cMajorPentatonicC4C5_gs; name = `3 Notes: C Pentatonic (${subPhase - 4}/4)`; }
+            else if (subPhase <= 12) { notePool = ['C4', 'E4', 'G4', 'C5']; name = `3 Notes: C Maj Arp (${subPhase - 8}/4)`; }
+            else if (subPhase <= 17) { notePool = cMajorScaleC4B4_gs.slice(0, 5); name = `3 Notes: C-G Diatonic (${subPhase - 12}/5)`; }
+            else if (subPhase <= 22) { notePool = cMajorScaleC4C5_gs; name = `3 Notes: C Maj Scale (${subPhase - 17}/5)`; }
+            else if (subPhase <= 26) { notePool = ['C4', 'D4', 'E4', 'F4', 'F#4', 'G4']; name = `3 Notes: Diatonic + F# (${subPhase - 22}/4)`; }
+            else {
+                if (subPhase <= 28) { notePool = allChromaticC4B4_gs.slice(0, 5);
+                } else { notePool = allChromaticC4B4_gs.slice(0, 7); }
+                name = `3 Notes: Chromatic Frags (${subPhase - 26}/4)`;
             }
         }
-         else if (level >= 56 && level <= 90) { 
+        else if (level >= 56 && level <= 90) {
             melodyLength = 4;
             tempo = 650 - Math.floor((level - 56) / 6) * 15;
             const subPhase = level - 55;
             if (subPhase <= 5) { notePool = cMajorPentatonicC4C5_gs; name = `4 Notes: C Pentatonic (${subPhase}/5)`; }
-            else if (subPhase <= 10) { notePool = cMajorScaleC4B4_gs.slice(0,5); name = `4 Notes: C-G Diatonic (${subPhase-5}/5)`; }
-            else if (subPhase <= 17) { notePool = cMajorScaleC4C5_gs; name = `4 Notes: C Maj Scale (${subPhase-10}/7)`; }
-            else if (subPhase <= 24) { notePool = ['C4','C#4','D4','E4','F4','F#4','G4','A4','B4','C5'].filter(n => noteFrequencies[n]); name = `4 Notes: C Maj + Chromatics (${subPhase-17}/7)`; }
-            else if (subPhase <= 30) { notePool = allChromaticC4B4_gs.slice(0,7); name = `4 Notes: Chromatic C-F# (${subPhase-24}/6)`; }
-            else { notePool = allChromaticC4B4_gs; name = `4 Notes: Chromatic C-B (${subPhase-30}/5)`; }
+            else if (subPhase <= 10) { notePool = cMajorScaleC4B4_gs.slice(0, 5); name = `4 Notes: C-G Diatonic (${subPhase - 5}/5)`; }
+            else if (subPhase <= 17) { notePool = cMajorScaleC4C5_gs; name = `4 Notes: C Maj Scale (${subPhase - 10}/7)`; }
+            else if (subPhase <= 24) { notePool = ['C4', 'C#4', 'D4', 'E4', 'F4', 'F#4', 'G4', 'A4', 'B4', 'C5'].filter(n => noteFrequencies[n]); name = `4 Notes: C Maj + Chromatics (${subPhase - 17}/7)`; }
+            else if (subPhase <= 30) { notePool = allChromaticC4B4_gs.slice(0, 7); name = `4 Notes: Chromatic C-F# (${subPhase - 24}/6)`; }
+            else { notePool = allChromaticC4B4_gs; name = `4 Notes: Chromatic C-B (${subPhase - 30}/5)`; }
         }
-        else { 
+        else { // Level 91+
             const baseLevelForPhase4 = 90;
             const levelsIntoPhase4 = level - baseLevelForPhase4;
             melodyLength = 5 + Math.floor(levelsIntoPhase4 / 40);
-            melodyLength = Math.min(melodyLength, 8); 
-            tempo = 550 - Math.floor(levelsIntoPhase4 / 8) * 10 - (melodyLength - 4) * 30;
+            melodyLength = Math.min(melodyLength, 8);
+            tempo = 550 - Math.floor(levelsIntoPhase4 / 8) * 10 - (melodyLength - 5) * 30;
+
             const stageInLength = levelsIntoPhase4 % 40;
             if (stageInLength < 8) { notePool = cMajorPentatonicC4C5_gs; name = `${melodyLength} Notes: C Pentatonic`; }
             else if (stageInLength < 16) { notePool = cMajorScaleC4C5_gs; name = `${melodyLength} Notes: C Major Scale`; }
-            else if (stageInLength < 24) { notePool = allChromaticC4B4_gs.slice(0,7); name = `${melodyLength} Notes: Chromatic C-F#`; }
+            else if (stageInLength < 24) { notePool = allChromaticC4B4_gs.slice(0, 7); name = `${melodyLength} Notes: Chromatic C-F#`; }
             else if (stageInLength < 32) { notePool = allChromaticC4B4_gs; name = `${melodyLength} Notes: Chromatic C-B`; }
             else { notePool = allChromaticC4C5_gs; name = `${melodyLength} Notes: Chromatic C-C (Octave)`; }
-            if (melodyLength >=6 && level > 150) {
-                const widerPoolBase = ['G3','A3','B3', ...allChromaticC4C5_gs, 'D5', 'E5'];
-                notePool = widerPoolBase.filter(n => noteFrequencies[n]); 
+
+            if (melodyLength >= 6 && level > 150) {
+                const widerPoolBase = ['G3', 'A3', 'B3', ...allChromaticC4C5_gs, 'D5', 'E5'];
+                notePool = widerPoolBase.filter(n => noteFrequencies[n]);
                 name = `${melodyLength} Notes: Wider Chromatic`;
             }
         }
-        tempo = Math.max(350, tempo); 
+        tempo = Math.max(350, tempo);
         return {
             levelNumber: level,
             melodyLength,
-            notePool: (notePool && notePool.length > 0) ? notePool : ['C4'], 
+            notePool: (notePool && notePool.length > 0) ? notePool : ['C4'],
             name: `Lvl ${level}: ${name}`,
             interval: tempo
         };
     }
 
-    // --- Audio Functions ---
     function getAudioContext() {
         if (typeof window.AudioContext === 'undefined' && typeof window.webkitAudioContext === 'undefined') {
-            if (!audioContext) { 
+            if (!audioContext) {
                 alert('Web Audio API is not supported in this browser');
             }
-            audioContext = null; 
+            audioContext = null;
             return null;
         }
 
         if (!audioContext) {
             try {
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                
-                if (audioContext && !keepAliveNode) { 
+
+                if (audioContext && !keepAliveNode) {
                     const oscillator = audioContext.createOscillator();
                     const gain = audioContext.createGain();
-                    oscillator.frequency.setValueAtTime(20, audioContext.currentTime); 
-                    gain.gain.setValueAtTime(0, audioContext.currentTime);           
+                    oscillator.frequency.setValueAtTime(20, audioContext.currentTime);
+                    gain.gain.setValueAtTime(0.00001, audioContext.currentTime); // Tiny non-zero gain
                     oscillator.connect(gain);
                     gain.connect(audioContext.destination);
-                    oscillator.start(); 
-                    keepAliveNode = { oscillator, gain }; 
+                    oscillator.start();
+                    keepAliveNode = { oscillator, gain };
                     console.log("AudioContext created and keep-alive node initialized.");
                 }
             } catch (e) {
                 alert('Web Audio API is not supported in this browser');
                 console.error("Error creating AudioContext:", e);
-                audioContext = null; 
+                audioContext = null;
                 return null;
             }
         }
@@ -174,29 +183,25 @@ document.addEventListener('DOMContentLoaded', () => {
         return audioContext;
     }
 
-    // NEW: Function to prime the audio system
     function primeAudioSystem(context) {
         if (!context || context.state !== 'running') {
-            // console.log("Prime: Audio context not available or not running.");
             return;
         }
         try {
             const bufferSource = context.createBufferSource();
-            const buffer = context.createBuffer(1, 1, context.sampleRate); // 1 channel, 1 frame (shortest possible)
-            bufferSource.buffer = buffer; // Buffer is initialized to silence
+            const buffer = context.createBuffer(1, 1, context.sampleRate);
+            bufferSource.buffer = buffer;
             bufferSource.connect(context.destination);
             bufferSource.start();
-            // console.log("Audio system primed.");
         } catch (e) {
             console.error("Error priming audio system:", e);
         }
     }
 
-
     function playNote(noteName, duration = 0.5, delay = 0) {
-        const context = getAudioContext(); 
-        if(!context) return; 
-        
+        const context = getAudioContext();
+        if (!context) return;
+
         const frequency = noteFrequencies[noteName];
         if (!frequency) { console.warn(`Freq not found: ${noteName}`); return; }
 
@@ -204,51 +209,48 @@ document.addEventListener('DOMContentLoaded', () => {
         const gainNode = context.createGain();
         oscillator.type = 'sine';
         oscillator.frequency.setValueAtTime(frequency, context.currentTime + delay);
-        
+
         gainNode.gain.setValueAtTime(0, context.currentTime + delay);
-        gainNode.gain.linearRampToValueAtTime(0.6, context.currentTime + delay + 0.05); 
-        gainNode.gain.linearRampToValueAtTime(0, context.currentTime + delay + duration); 
-        
+        gainNode.gain.linearRampToValueAtTime(0.6, context.currentTime + delay + 0.05);
+        gainNode.gain.linearRampToValueAtTime(0, context.currentTime + delay + duration);
+
         oscillator.connect(gainNode);
         gainNode.connect(context.destination);
-        
+
         oscillator.start(context.currentTime + delay);
-        oscillator.stop(context.currentTime + delay + duration);
+        oscillator.stop(context.currentTime + delay + duration + 0.01); // Stop slightly after gain ramp
     }
 
-    // MODIFIED playSequence to include priming
     async function playSequence(notes) {
         const context = getAudioContext();
         if (!context) {
             console.warn("playSequence: No audio context. Cannot play sequence.");
-            // Gracefully handle UI if audio isn't available
             if (gameInProgress) {
-                canPlayPiano = false; // Or true, depending on desired behavior
+                canPlayPiano = false;
                 checkAnswerBtn.disabled = true;
                 playMelodyBtn.disabled = false;
                 feedbackDiv.textContent = `Your turn! (Audio not available). Play the ${currentMelody.length}-note melody.`;
-                feedbackDiv.className = 'feedback incorrect'; // Indicate an issue
+                feedbackDiv.className = 'feedback incorrect';
             }
             return;
         }
 
-        // Prime the audio system if there are notes to play and context is running
         if (notes && notes.length > 0 && context.state === 'running') {
             primeAudioSystem(context);
-            // Optional tiny delay after priming, though usually not needed.
-            // await new Promise(resolve => setTimeout(resolve, 10)); 
         }
 
         if (!gameInProgress) return;
         disableControlsDuringPlayback();
-        const settings = getLevelSettings(currentLevel);
+        
+        const levelForSettings = isAttemptingUnlockChallenge ? challengeTargetLevel : currentLevel;
+        const settings = getLevelSettings(levelForSettings);
         const interval = settings.interval || 700;
 
         for (let i = 0; i < notes.length; i++) {
             playNote(notes[i], interval / 1000 * 0.8);
             await new Promise(resolve => setTimeout(resolve, interval));
         }
-        
+
         if (gameInProgress) {
             canPlayPiano = true;
             checkAnswerBtn.disabled = true;
@@ -258,7 +260,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- Piano Key Generation & Styling ---
     function createPiano() {
         pianoKeyRenderOrder.forEach(noteName => {
             const keyElement = document.createElement('div');
@@ -271,7 +272,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updatePianoKeyStyles() {
-        const currentSettings = getLevelSettings(currentLevel);
+        const levelForSettings = isAttemptingUnlockChallenge ? challengeTargetLevel : currentLevel;
+        const currentSettings = getLevelSettings(levelForSettings);
         const currentNotePool = currentSettings?.notePool || pianoKeyRenderOrder;
         document.querySelectorAll('.piano .key').forEach(keyEl => {
             const note = keyEl.dataset.note;
@@ -284,18 +286,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function handlePianoKeyPress(noteName, keyElement = null) {
-        const context = getAudioContext(); 
-        if (!context) return; 
+        const context = getAudioContext();
+        if (!context) return;
 
         if (!canPlayPiano || !gameInProgress) return;
-        
-        const currentSettings = getLevelSettings(currentLevel);
+
+        const levelForSettings = isAttemptingUnlockChallenge ? challengeTargetLevel : currentLevel;
+        const currentSettings = getLevelSettings(levelForSettings);
         const currentNotePool = currentSettings?.notePool || pianoKeyRenderOrder;
 
         if (!currentNotePool.includes(noteName)) {
             const actualElement = keyElement || document.querySelector(`.key[data-note="${noteName}"]`);
-            if(actualElement && actualElement.classList.contains('dimmed-for-level')) {
-                return; 
+            if (actualElement && actualElement.classList.contains('dimmed-for-level')) {
+                return;
             }
         }
 
@@ -313,16 +316,15 @@ document.addEventListener('DOMContentLoaded', () => {
             checkAnswerBtn.disabled = userMelody.length < currentMelody.length;
         }
     }
-
-    // --- Game Logic ---
-    function generateMelody() {
-        const settings = getLevelSettings(currentLevel);
+    
+    function generateMelody(levelToGenerateFor = currentLevel) {
+        const settings = getLevelSettings(levelToGenerateFor);
         currentMelody = [];
         const notePool = settings.notePool;
         const length = settings.melodyLength;
 
         if (!notePool || notePool.length === 0) {
-            console.error("Note pool empty for level:", currentLevel, "Settings:", settings);
+            console.error("Note pool empty for level:", levelToGenerateFor, "Settings:", settings);
             currentMelody = ['C4']; return;
         }
         
@@ -345,7 +347,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 lastNote = nextNote;
             }
         }
-        console.log(`${settings.name}: ${currentMelody.join(', ')}`);
+        console.log(`Generating for ${settings.name}: ${currentMelody.join(', ')}`);
     }
 
     function checkAnswer() {
@@ -358,122 +360,207 @@ document.addEventListener('DOMContentLoaded', () => {
         let correct = userPlayedSegment.length === targetLength &&
                       currentMelody.every((note, index) => note === userPlayedSegment[index]);
 
-        if (correct) {
-            correctAnswersInARow++;
-            feedbackDiv.textContent = `Correct!`;
-            feedbackDiv.className = 'feedback correct';
+        let feedbackMessage = "";
+        let newLevelInfo = "";
 
-            if (correctAnswersInARow >= CORRECT_ANSWERS_TO_LEVEL_UP) {
-                currentLevel++;
-                correctAnswersInARow = 0;
-                saveLevel(currentLevel);
-                const newLevelSettings = getLevelSettings(currentLevel);
-                feedbackDiv.textContent = `Level Up! Now on ${newLevelSettings.name}`;
-                if (currentLevel % 25 === 0) { 
-                    feedbackDiv.textContent += " Great progress!";
+        if (isAttemptingUnlockChallenge) {
+            if (correct) {
+                correctAnswersInARow++;
+                if (correctAnswersInARow >= CORRECT_ANSWERS_FOR_UNLOCK_CHALLENGE) {
+                    // Unlock success!
+                    maxLevelReached = challengeTargetLevel;
+                    currentLevel = challengeTargetLevel; // Officially set
+                    isAttemptingUnlockChallenge = false;
+                    correctAnswersInARow = 0;
+                    saveGameState();
+                    newLevelInfo = getLevelSettings(currentLevel).name;
+                    feedbackMessage = `UNLOCKED! ${newLevelInfo} is now your highest.`;
+                    feedbackDiv.className = 'feedback correct';
+                    populateLevelSelection();
+                } else {
+                    // Correct, but not enough for unlock yet
+                    feedbackMessage = `Correct! (${correctAnswersInARow}/${CORRECT_ANSWERS_FOR_UNLOCK_CHALLENGE} for unlock). Keep going on Level ${challengeTargetLevel}!`;
+                    feedbackDiv.className = 'feedback correct';
+                    // Stay on this challenge level, next round will be for challengeTargetLevel
                 }
             } else {
-                feedbackDiv.textContent = `Correct! (${correctAnswersInARow}/${CORRECT_ANSWERS_TO_LEVEL_UP} for next level)`;
+                // Unlock challenge failed
+                isAttemptingUnlockChallenge = false;
+                currentLevel = maxLevelReached; // Revert to the highest known safe point
+                correctAnswersInARow = 0;
+                challengeTargetLevel = 0; // Reset challenge target
+                saveGameState(); // Save the reverted state
+                feedbackMessage = `Unlock attempt for Level ${userPlayedSegment.length > 0 ? challengeTargetLevel : currentLevel} failed. Returning to Level ${currentLevel}.`;
+                feedbackDiv.className = 'feedback incorrect';
+                populateLevelSelection();
             }
-            setTimeout(() => {
-                if(gameInProgress) startNewRound(true);
-            }, 1500);
-        } else {
-            correctAnswersInARow = 0;
-            feedbackDiv.textContent = `Not quite. Melody was: ${currentMelody.join(', ')}. You played: ${userPlayedSegment.join(', ')}. Try this level again.`;
-            feedbackDiv.className = 'feedback incorrect';
-             setTimeout(() => {
-                if(gameInProgress) startNewRound(true);
-            }, 2500);
+        } else { // Normal play on an unlocked level (currentLevel <= maxLevelReached)
+            if (correct) {
+                correctAnswersInARow++;
+                if (correctAnswersInARow >= CORRECT_ANSWERS_TO_LEVEL_UP) {
+                    currentLevel++;
+                    maxLevelReached = Math.max(maxLevelReached, currentLevel);
+                    correctAnswersInARow = 0;
+                    saveGameState();
+                    newLevelInfo = getLevelSettings(currentLevel).name;
+                    feedbackMessage = `Level Up! Now on ${newLevelInfo}.`;
+                    if (currentLevel > 0 && currentLevel % 25 === 0) {
+                         feedbackMessage += " Great progress!";
+                    }
+                    feedbackDiv.className = 'feedback correct';
+                    populateLevelSelection();
+                } else {
+                    feedbackMessage = `Correct! (${correctAnswersInARow}/${CORRECT_ANSWERS_TO_LEVEL_UP} for next level)`;
+                    feedbackDiv.className = 'feedback correct';
+                }
+            } else {
+                // Incorrect on normal level
+                correctAnswersInARow = 0;
+                const playedNotesStr = userPlayedSegment.length > 0 ? userPlayedSegment.join(', ') : "no notes (or too few)";
+                feedbackMessage = `Not quite. Melody was: ${currentMelody.join(', ')}. You played: ${playedNotesStr}. Try this level again.`;
+                feedbackDiv.className = 'feedback incorrect';
+            }
         }
-        userMelody = []; 
+
+        feedbackDiv.textContent = feedbackMessage;
+        userMelody = [];
         updateProgressDisplay();
-        populateLevelSelection();
-    }
 
-    function handleGameCompletion() { 
-        gameInProgress = false;
-        canPlayPiano = false;
-        const finalLevelSettings = getLevelSettings(currentLevel);
-        feedbackDiv.textContent = `Wow! You've reached ${finalLevelSettings.name}! Click Restart to play again.`;
-        feedbackDiv.className = 'feedback correct';
-        playMelodyBtn.textContent = "Restart Game";
-        playMelodyBtn.disabled = false;
-        checkAnswerBtn.disabled = true;
-        currentLevelDisplay.textContent = `Reached: ${currentLevel}`;
-        progressToNextLevelDisplay.textContent = "Fantastic!";
-        updatePianoKeyStyles();
-        populateLevelSelection();
-    }
-
-    // --- Level Storage Functions ---
-    function saveLevel(level) {
-        try {
-            localStorage.setItem(LOCAL_STORAGE_LEVEL_KEY, level);
-        } catch (e) {
-            console.error("Failed to save level to localStorage:", e);
-        }
+        const timeoutDuration = correct ? 
+            ( (isAttemptingUnlockChallenge && correctAnswersInARow < CORRECT_ANSWERS_FOR_UNLOCK_CHALLENGE && correctAnswersInARow > 0) ? 1500 : 1800) 
+            : 2500;
+        setTimeout(() => {
+            if (gameInProgress) startNewRound(true);
+        }, timeoutDuration);
     }
     
-    function loadLevel() {
+    function saveGameState() {
         try {
-            const savedLevel = localStorage.getItem(LOCAL_STORAGE_LEVEL_KEY);
-            if (savedLevel) {
-                let level = parseInt(savedLevel, 10);
-                if (level >= 1) { 
-                    return Math.min(level, 999); 
-                }
-            }
+            localStorage.setItem(LOCAL_STORAGE_LEVEL_KEY, currentLevel);
+            localStorage.setItem(LOCAL_STORAGE_MAX_LEVEL_KEY, maxLevelReached);
         } catch (e) {
-            console.error("Failed to load level from localStorage:", e);
+            console.error("Failed to save game state to localStorage:", e);
         }
-        return 1;
+    }
+
+    function loadGameState() {
+        try {
+            const savedCurrentLevel = localStorage.getItem(LOCAL_STORAGE_LEVEL_KEY);
+            if (savedCurrentLevel) {
+                currentLevel = parseInt(savedCurrentLevel, 10);
+                if (isNaN(currentLevel) || currentLevel < 1) currentLevel = 1;
+            } else {
+                currentLevel = 1;
+            }
+
+            const savedMaxLevel = localStorage.getItem(LOCAL_STORAGE_MAX_LEVEL_KEY);
+            if (savedMaxLevel) {
+                maxLevelReached = parseInt(savedMaxLevel, 10);
+                if (isNaN(maxLevelReached) || maxLevelReached < 1) maxLevelReached = 1;
+            } else {
+                maxLevelReached = 1;
+            }
+            
+            maxLevelReached = Math.max(maxLevelReached, currentLevel); 
+            currentLevel = Math.min(currentLevel, maxLevelReached); 
+            isAttemptingUnlockChallenge = false; // Ensure this is reset on load
+            challengeTargetLevel = 0;
+
+        } catch (e) {
+            console.error("Failed to load game state from localStorage:", e);
+            currentLevel = 1;
+            maxLevelReached = 1;
+            isAttemptingUnlockChallenge = false;
+            challengeTargetLevel = 0;
+        }
     }
 
     function populateLevelSelection() {
+        const previouslySelectedValue = levelSelect.value; // Store for potential re-selection
         levelSelect.innerHTML = '';
-        const maxUnlockedLevel = loadLevel();
-        const practicalDropdownLimit = Math.max(maxUnlockedLevel, 200); 
+        
+        // Determine a practical upper limit for the dropdown options
+        let practicalDropdownLimit = Math.max(maxLevelReached + 20, 50); // Show at least a few locked levels
+        if (isAttemptingUnlockChallenge && challengeTargetLevel > practicalDropdownLimit) {
+            practicalDropdownLimit = challengeTargetLevel + 5; // Ensure challenge target is visible
+        }
+        practicalDropdownLimit = Math.min(practicalDropdownLimit, 999); // Cap at a high number
+
+        let currentLevelOrChallengeTarget = isAttemptingUnlockChallenge ? challengeTargetLevel : currentLevel;
+        let optionForCurrentSelectionExists = false;
 
         for (let i = 1; i <= practicalDropdownLimit; i++) {
-            if (i > maxUnlockedLevel && i > currentLevel + 5 && i !== practicalDropdownLimit) { 
-                if (i % 10 === 0 || i % 25 === 0 ) { /* show some milestones */ }
-                else { continue; }
+            // More lenient skipping to ensure important levels are shown
+            if ( i !== currentLevelOrChallengeTarget && i !== maxLevelReached &&
+                 i > maxLevelReached + 5 && 
+                 i !== practicalDropdownLimit &&
+                 !(i % 10 === 0 || i % 25 === 0 || i % 5 === 0 && i > 50) 
+            ) {
+                 if (i > 50 && i % 2 !== 0) continue; // Skip odd levels far out if not milestones
+                 else if (i <= 50 && i > maxLevelReached + 3 && i % 2 !== 0 && i %5 !== 0) continue; 
             }
+
             const option = document.createElement('option');
             option.value = i;
             const levelData = getLevelSettings(i);
-            option.textContent = levelData.name.length > 50 ? `Lvl ${i}: ${levelData.melodyLength} notes...` : levelData.name; 
+            option.textContent = levelData.name.length > 55 ? `Lvl ${i}: ${levelData.melodyLength} notes...` : levelData.name; 
             
-            if (i > maxUnlockedLevel) {
-                option.disabled = true; 
+            if (i > maxLevelReached) {
                 option.textContent += " (Locked)";
             }
             levelSelect.appendChild(option);
+            if (i === currentLevelOrChallengeTarget) {
+                optionForCurrentSelectionExists = true;
+            }
         }
         
-        if (document.querySelector(`option[value="${currentLevel}"]`)) {
-             levelSelect.value = currentLevel;
-        } else if (maxUnlockedLevel > 0 && document.querySelector(`option[value="${maxUnlockedLevel}"]`)) {
-             levelSelect.value = maxUnlockedLevel; 
+        // If currentLevelOrChallengeTarget didn't get an option due to loop limits/skipping, add it
+        if (!optionForCurrentSelectionExists && currentLevelOrChallengeTarget > 0 && currentLevelOrChallengeTarget <= 999) {
+            const option = document.createElement('option');
+            option.value = currentLevelOrChallengeTarget;
+            const levelData = getLevelSettings(currentLevelOrChallengeTarget);
+            option.textContent = levelData.name.length > 55 ? `Lvl ${currentLevelOrChallengeTarget}: ${levelData.melodyLength} notes...` : levelData.name;
+            if (currentLevelOrChallengeTarget > maxLevelReached) {
+                option.textContent += " (Locked)";
+            }
+            // Insert it in sorted order or append
+            let inserted = false;
+            for (let existingOpt of levelSelect.options) {
+                if (parseInt(existingOpt.value) > currentLevelOrChallengeTarget) {
+                    levelSelect.insertBefore(option, existingOpt);
+                    inserted = true;
+                    break;
+                }
+            }
+            if (!inserted) levelSelect.appendChild(option);
+        }
+        
+        // Set the selected value
+        if (document.querySelector(`option[value="${currentLevelOrChallengeTarget}"]`)) {
+            levelSelect.value = currentLevelOrChallengeTarget;
+        } else if (previouslySelectedValue && document.querySelector(`option[value="${previouslySelectedValue}"]`)) {
+            levelSelect.value = previouslySelectedValue; // Fallback to previous if current somehow disappeared
         } else if (levelSelect.options.length > 0) {
-             levelSelect.value = levelSelect.options[0].value;
+            levelSelect.value = levelSelect.options[0].value; // Absolute fallback
         }
     }
 
     function startNewRound(autoPlayMelody = false) {
-        if (playMelodyBtn.textContent === "Restart Game" && !autoPlayMelody) {
-            if (!gameInProgress) return; 
-        }
-
         gameInProgress = true;
         userMelody = [];
-        generateMelody();
+        
+        const levelForMelody = isAttemptingUnlockChallenge ? challengeTargetLevel : currentLevel;
+        generateMelody(levelForMelody); // Generate melody for the correct level
+        
         updatePianoKeyStyles();
         updateProgressDisplay();
 
-        const settings = getLevelSettings(currentLevel);
-        feedbackDiv.textContent = `${settings.name}. Listen...`;
+        const settings = getLevelSettings(levelForMelody);
+        if (isAttemptingUnlockChallenge) {
+            feedbackDiv.textContent = `CHALLENGE Lvl ${challengeTargetLevel}: ${settings.name.replace(`Lvl ${challengeTargetLevel}: `, '')}. Get ${CORRECT_ANSWERS_FOR_UNLOCK_CHALLENGE} correct! Listen...`;
+        } else {
+            feedbackDiv.textContent = `${settings.name}. Listen...`;
+        }
         feedbackDiv.className = 'feedback';
         
         canPlayPiano = false;
@@ -482,16 +569,18 @@ document.addEventListener('DOMContentLoaded', () => {
         checkAnswerBtn.disabled = true;
 
         if (autoPlayMelody) {
-            // The playSequence call is inside a setTimeout, so priming happens right before playback.
             setTimeout(() => playSequence(currentMelody), 500); 
         }
     }
 
-    // --- UI Update & Control Functions ---
     function updateProgressDisplay() {
-        const settings = getLevelSettings(currentLevel);
-        currentLevelDisplay.textContent = `Level: ${currentLevel}`;
-        progressToNextLevelDisplay.textContent = `Correct: ${correctAnswersInARow}/${CORRECT_ANSWERS_TO_LEVEL_UP}`;
+        if (isAttemptingUnlockChallenge) {
+            currentLevelDisplay.textContent = `Challenge: Lvl ${challengeTargetLevel} (Max: ${maxLevelReached})`;
+            progressToNextLevelDisplay.textContent = `For Unlock: ${correctAnswersInARow}/${CORRECT_ANSWERS_FOR_UNLOCK_CHALLENGE}`;
+        } else {
+            currentLevelDisplay.textContent = `Level: ${currentLevel} (Max: ${maxLevelReached})`;
+            progressToNextLevelDisplay.textContent = `Correct: ${correctAnswersInARow}/${CORRECT_ANSWERS_TO_LEVEL_UP}`;
+        }
     }
 
     function disableControlsDuringPlayback() {
@@ -499,24 +588,28 @@ document.addEventListener('DOMContentLoaded', () => {
         checkAnswerBtn.disabled = true;
     }
 
-    // --- Event Listeners ---
     playMelodyBtn.addEventListener('click', () => {
         const context = getAudioContext();
         if (context === null && playMelodyBtn.textContent !== "Restart Game") {
+            feedbackDiv.textContent = "Audio system not available. Please try refreshing.";
+            feedbackDiv.className = 'feedback incorrect';
             return;
         }
 
         if (playMelodyBtn.textContent === "Restart Game") {
             currentLevel = 1;
+            // maxLevelReached is NOT reset here, preserving highest achievement
             correctAnswersInARow = 0;
-            saveLevel(currentLevel);
+            isAttemptingUnlockChallenge = false; // Reset challenge state
+            challengeTargetLevel = 0;           // Reset challenge target
+            saveGameState(); 
             gameInProgress = true; 
-            populateLevelSelection();
-            startNewRound(true); // playSequence is called inside here (with priming)
+            populateLevelSelection(); 
+            startNewRound(true);
         } else if (currentMelody.length > 0 && gameInProgress) {
-            playSequence(currentMelody); // Priming happens inside playSequence
+            playSequence(currentMelody);
         } else if (gameInProgress) { 
-            startNewRound(true); // playSequence is called inside here (with priming)
+            startNewRound(true);
         }
     });
 
@@ -532,17 +625,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
     levelSelect.addEventListener('change', (event) => {
         const selectedLevel = parseInt(event.target.value, 10);
-        const maxUnlocked = loadLevel();
-        if (selectedLevel >= 1 && selectedLevel <= maxUnlocked) { 
+        isAttemptingUnlockChallenge = false; // Reset by default on any selection change
+
+        if (selectedLevel > maxLevelReached) {
+            // This is an attempt to unlock a new highest level
+            isAttemptingUnlockChallenge = true;
+            challengeTargetLevel = selectedLevel;
+            currentLevel = selectedLevel; // Temporarily set currentLevel for melody generation and UI consistency
+            correctAnswersInARow = 0;
+            feedbackDiv.textContent = `CHALLENGE: Unlock Level ${challengeTargetLevel}! Get ${CORRECT_ANSWERS_FOR_UNLOCK_CHALLENGE} correct in a row.`;
+            feedbackDiv.className = 'feedback'; // Neutral feedback for challenge start
+            // Don't save state yet for challengeTargetLevel, only on success.
+        } else if (selectedLevel >= 1 && selectedLevel <= maxLevelReached) {
+            // Navigating to an already unlocked or current level
             currentLevel = selectedLevel;
             correctAnswersInARow = 0;
-            saveLevel(currentLevel); 
-            populateLevelSelection(); 
-            startNewRound(true); // Priming will happen via playSequence
+            challengeTargetLevel = 0; // Ensure no lingering challenge target
+            saveGameState(); 
         } else {
-            console.warn("Attempted to select an invalid or locked level.");
-            levelSelect.value = currentLevel; 
+            // Invalid selection (should not happen if dropdown is populated correctly)
+            console.warn("Invalid level selection:", selectedLevel);
+            levelSelect.value = currentLevel; // Revert to a known good state
+            return;
         }
+        populateLevelSelection(); // Re-render to ensure correct selection highlight and (Locked) status
+        startNewRound(true);
     });
 
     document.addEventListener('keydown', (event) => {
@@ -560,7 +667,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Initialization ---
     createPiano();
-    currentLevel = loadLevel();
+    loadGameState();
+    
     populateLevelSelection();
     
     playMelodyBtn.disabled = false; 
@@ -568,6 +676,8 @@ document.addEventListener('DOMContentLoaded', () => {
     canPlayPiano = false; 
     updatePianoKeyStyles();
     updateProgressDisplay();
-    const initialSettings = getLevelSettings(currentLevel);
+    
+    const initialLevelForDisplay = isAttemptingUnlockChallenge ? challengeTargetLevel : currentLevel;
+    const initialSettings = getLevelSettings(initialLevelForDisplay);
     feedbackDiv.textContent = `Welcome! Click "Play Melody" to start ${initialSettings.name}.`;
 });
